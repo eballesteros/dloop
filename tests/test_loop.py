@@ -1,5 +1,6 @@
 import pytest
 import time
+import json
 from dloop.loop import LoopState
 
 def test_loop_state_init():
@@ -87,3 +88,103 @@ def test_elapsed_time():
     previous_elapsed = state.elapsed_time
     time.sleep(0.1)
     assert state.elapsed_time > previous_elapsed
+
+def test_loop_state_to_dict():
+    """Test converting state to dictionary."""
+    # Initialize with custom values
+    state = LoopState(
+        current_epoch=3,
+        global_step=42,
+        last_epoch_change_step=30,
+        start_time=1000.0  # Fixed timestamp for testing
+    )
+    
+    # Convert to dictionary
+    state_dict = state.to_dict()
+    
+    # Check that all expected keys are present
+    assert "current_epoch" in state_dict
+    assert "global_step" in state_dict
+    assert "last_epoch_change_step" in state_dict
+    assert "start_time" in state_dict
+    assert "serialized_at" in state_dict
+    
+    # Check values
+    assert state_dict["current_epoch"] == 3
+    assert state_dict["global_step"] == 42
+    assert state_dict["last_epoch_change_step"] == 30
+    assert state_dict["start_time"] == 1000.0
+    
+    # serialized_at should be current time
+    assert state_dict["serialized_at"] >= time.time() - 1
+    assert state_dict["serialized_at"] <= time.time() + 1
+
+def test_loop_state_from_dict():
+    """Test recreating state from dictionary."""
+    # Create a state dictionary
+    state_dict = {
+        "current_epoch": 5,
+        "global_step": 100,
+        "last_epoch_change_step": 80,
+        "start_time": 2000.0,
+        "serialized_at": time.time()  # Not used by from_dict
+    }
+    
+    # Create state from dictionary
+    state = LoopState.from_dict(state_dict)
+    
+    # Check values
+    assert state.current_epoch == 5
+    assert state.global_step == 100
+    assert state._last_epoch_change_step == 80
+    assert state.start_time == 2000.0
+    assert state.local_epoch_step == 20  # 100 - 80
+
+def test_loop_state_round_trip():
+    """Test round-trip state → dict → state."""
+    # Create original state with non-default values and run a few iterations
+    original = LoopState()
+    original.increment_step()
+    original.increment_step()
+    original.increment_epoch()
+    original.increment_step()
+    
+    # Convert to dict
+    state_dict = original.to_dict()
+    
+    # Convert back to state
+    reconstructed = LoopState.from_dict(state_dict)
+    
+    # Check all values match
+    assert reconstructed.current_epoch == original.current_epoch
+    assert reconstructed.global_step == original.global_step
+    assert reconstructed._last_epoch_change_step == original._last_epoch_change_step
+    assert reconstructed.start_time == original.start_time
+    assert reconstructed.local_epoch_step == original.local_epoch_step
+
+def test_json_serialization():
+    """Test JSON serialization of state."""
+    # Create state with non-default values
+    state = LoopState(
+        current_epoch=7,
+        global_step=150,
+        last_epoch_change_step=120
+    )
+    
+    # Convert to dictionary
+    state_dict = state.to_dict()
+    
+    # Serialize to JSON
+    json_str = json.dumps(state_dict)
+    
+    # Deserialize from JSON
+    loaded_dict = json.loads(json_str)
+    
+    # Recreate state
+    loaded_state = LoopState.from_dict(loaded_dict)
+    
+    # Check values match
+    assert loaded_state.current_epoch == 7
+    assert loaded_state.global_step == 150
+    assert loaded_state._last_epoch_change_step == 120
+    assert loaded_state.local_epoch_step == 30
