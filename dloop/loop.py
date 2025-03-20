@@ -158,9 +158,30 @@ class Loop:
         Raises:
             StopIteration: When iteration should end
         """
+        # Check termination conditions
+        if self.max_epochs is not None and self.state.current_epoch >= self.max_epochs:
+            raise StopIteration("Reached maximum number of epochs")
+            
+        if self.max_steps is not None and self.state.global_step >= self.max_steps:
+            raise StopIteration("Reached maximum number of steps")
+        
         try:
+            # Try to get next batch from current epoch
             batch = next(self._iterator)
+            
+            # Update step counter
+            self.state.increment_step()
+            
             return batch
+            
         except StopIteration:
-            # Will handle epoch transitions later
-            raise
+            # End of epoch reached, increment epoch counter
+            self.state.increment_epoch()
+            
+            # Check if we've reached max_epochs after incrementing
+            if self.max_epochs is not None and self.state.current_epoch >= self.max_epochs:
+                raise StopIteration("Reached maximum number of epochs")
+            
+            # Start a new iterator for the next epoch and recursively call next
+            self._iterator = iter(self.dataloader)
+            return self.__next__()

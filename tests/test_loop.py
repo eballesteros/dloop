@@ -421,3 +421,102 @@ def test_loop_multiple_iterations():
     # Second iteration should restart
     second_iteration = list(loop)
     assert second_iteration == batches
+
+def test_state_updates_during_iteration():
+    """Test state updates during iteration."""
+    # Create a dataloader
+    batches = [10, 20, 30]
+    dataloader = MockDataLoader(batches)
+    
+    # Create a loop
+    loop = Loop(dataloader)
+    
+    # Initial state
+    assert loop.state.current_epoch == 0
+    assert loop.state.global_step == 0
+    assert loop.state.local_epoch_step == 0
+    
+    # First batch
+    iter(loop)  # Initialize iterator
+    batch = next(loop)
+    assert batch == 10
+    assert loop.state.global_step == 1
+    assert loop.state.local_epoch_step == 1
+    
+    # Second batch
+    batch = next(loop)
+    assert batch == 20
+    assert loop.state.global_step == 2
+    assert loop.state.local_epoch_step == 2
+    
+    # Third batch
+    batch = next(loop)
+    assert batch == 30
+    assert loop.state.global_step == 3
+    assert loop.state.local_epoch_step == 3
+
+def test_epoch_transitions():
+    """Test epoch transitions during iteration."""
+    # Create a dataloader with a single batch
+    dataloader = MockDataLoader([1])
+    
+    # Create a loop
+    loop = Loop(dataloader)
+    
+    # Initial state
+    assert loop.state.current_epoch == 0
+    
+    # First epoch
+    iter(loop)
+    batch = next(loop)
+    assert batch == 1
+    assert loop.state.current_epoch == 0
+    assert loop.state.global_step == 1
+    
+    # Transition to second epoch
+    batch = next(loop)
+    assert batch == 1  # Same batch, new epoch
+    assert loop.state.current_epoch == 1
+    assert loop.state.global_step == 2
+    assert loop.state.local_epoch_step == 1  # Reset for new epoch
+    
+    # Transition to third epoch
+    batch = next(loop)
+    assert batch == 1  # Same batch, new epoch
+    assert loop.state.current_epoch == 2
+    assert loop.state.global_step == 3
+    assert loop.state.local_epoch_step == 1
+
+def test_max_epochs_termination():
+    """Test termination at max_epochs."""
+    # Create a dataloader with a single batch
+    dataloader = MockDataLoader([1])
+    
+    # Create a loop with max_epochs=2
+    loop = Loop(dataloader, max_epochs=2)
+    
+    # Should get 2 batches (one per epoch) then stop
+    batches = list(loop)
+    assert batches == [1, 1]
+    assert loop.state.current_epoch == 2
+    
+    # Check that we reached max_epochs
+    with pytest.raises(StopIteration):
+        next(iter(loop))
+
+def test_max_steps_termination():
+    """Test termination at max_steps."""
+    # Create a dataloader with multiple batches
+    dataloader = MockDataLoader([1, 2, 3, 4, 5])
+    
+    # Create a loop with max_steps=3
+    loop = Loop(dataloader, max_steps=3)
+    
+    # Should get 3 batches then stop
+    batches = list(loop)
+    assert batches == [1, 2, 3]
+    assert loop.state.global_step == 3
+    
+    # Check that we reached max_steps
+    with pytest.raises(StopIteration):
+        next(iter(loop))
