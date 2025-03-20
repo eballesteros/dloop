@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "dloop"
+version = "0.1.0"
+description = "lightweight Python library that simplifies deep learning training loops by providing an elegant event-based iteration system"
+authors = ["Eduardo Ballesteros <eduardo.ballesterosg@outlook.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+typing-extensions = "^4.12.2"
+tqdm = {version = "^4.67.1", optional = true}
+
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.5"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
