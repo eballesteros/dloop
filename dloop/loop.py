@@ -102,12 +102,19 @@ class Loop:
             max_epochs: Maximum number of epochs
             max_steps: Maximum number of steps
             state_file: Path to save/load loop state
+            
+        Raises:
+            ValueError: If no stopping condition (max_epochs or max_steps) is provided
         """
         self.dataloader = dataloader
         self.events = events or {}
         self.max_epochs = max_epochs
         self.max_steps = max_steps
         self.state_file = state_file
+        
+        # Ensure at least one stopping condition is provided
+        if self.max_epochs is None and self.max_steps is None:
+            raise ValueError("At least one stopping condition (max_epochs or max_steps) must be provided")
         
         # Initialize state
         self.state = LoopState()
@@ -146,6 +153,7 @@ class Loop:
         Returns:
             self: The Loop instance
         """
+        # Initialize the iterator from dataloader
         self._iterator = iter(self.dataloader)
         return self
         
@@ -182,6 +190,13 @@ class Loop:
             if self.max_epochs is not None and self.state.current_epoch >= self.max_epochs:
                 raise StopIteration("Reached maximum number of epochs")
             
-            # Start a new iterator for the next epoch and recursively call next
+            # Start a new iterator for the next epoch and continue
             self._iterator = iter(self.dataloader)
-            return self.__next__()
+            
+            # Get the first batch of the new epoch
+            batch = next(self._iterator)
+            
+            # Update step counter for this new batch too
+            self.state.increment_step()
+            
+            return batch

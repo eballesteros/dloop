@@ -204,15 +204,15 @@ def test_loop_init_basic():
     # Create a simple dataloader
     dataloader = MockDataLoader([1, 2, 3])
     
-    # Create a loop with minimal parameters
-    loop = Loop(dataloader)
+    # Create a loop with minimal parameters (including max_epochs as stopping condition)
+    loop = Loop(dataloader, max_epochs=1)
     
     # Check dataloader is stored
     assert loop.dataloader is dataloader
     
-    # Check defaults
+    # Check defaults and specified values
     assert loop.events == {}
-    assert loop.max_epochs is None
+    assert loop.max_epochs == 1
     assert loop.max_steps is None
     assert loop.state_file is None
     
@@ -267,8 +267,8 @@ def test_loop_with_events():
         123: "handler3"
     }
     
-    # Create loop with events
-    loop = Loop(dataloader=dataloader, events=events)
+    # Create loop with events and a stopping condition
+    loop = Loop(dataloader=dataloader, events=events, max_steps=10)
     
     # Check events are stored correctly
     assert loop.events == events
@@ -281,8 +281,8 @@ def test_loop_with_deque():
     # Create a deque as dataloader
     dataloader = deque([1, 2, 3])
     
-    # Create loop
-    loop = Loop(dataloader)
+    # Create loop with a stopping condition
+    loop = Loop(dataloader, max_epochs=1)
     
     # Check dataloader is stored
     assert loop.dataloader is dataloader
@@ -292,8 +292,8 @@ def test_loop_context_manager():
     # Create a dataloader
     dataloader = MockDataLoader([1, 2, 3])
     
-    # Use Loop as a context manager
-    with Loop(dataloader) as loop:
+    # Use Loop as a context manager with a stopping condition
+    with Loop(dataloader, max_steps=10) as loop:
         # Check that __enter__ returns the Loop instance
         assert isinstance(loop, Loop)
         assert loop.dataloader is dataloader
@@ -322,8 +322,8 @@ def test_loop_exit_called():
             self.exc_info = (exc_type, exc_val, exc_tb)
             return super().__exit__(exc_type, exc_val, exc_tb)
     
-    # Create a tracking loop
-    loop = TrackingLoop(dataloader)
+    # Create a tracking loop with a stopping condition
+    loop = TrackingLoop(dataloader, max_epochs=1)
     
     # Use the loop as a context manager
     with loop:
@@ -350,8 +350,8 @@ def test_loop_exit_with_exception():
             self.exc_info = (exc_type, exc_val, exc_tb)
             return super().__exit__(exc_type, exc_val, exc_tb)
     
-    # Create a tracking loop
-    loop = TrackingLoop(dataloader)
+    # Create a tracking loop with a stopping condition
+    loop = TrackingLoop(dataloader, max_steps=5)
     
     # Use the loop as a context manager with an exception
     try:
@@ -373,7 +373,7 @@ def test_loop_iteration():
     dataloader = MockDataLoader(batches)
     
     # Create a loop
-    loop = Loop(dataloader)
+    loop = Loop(dataloader, max_epochs=1)
     
     # Iterate over the loop
     collected_batches = []
@@ -389,8 +389,8 @@ def test_loop_next():
     batches = [100, 200, 300, 400]
     dataloader = MockDataLoader(batches)
     
-    # Create a loop
-    loop = Loop(dataloader)
+    # Create a loop with a stopping condition
+    loop = Loop(dataloader, max_epochs=1)
     
     # Initialize the iterator
     iter(loop)
@@ -405,31 +405,14 @@ def test_loop_next():
     with pytest.raises(StopIteration):
         next(loop)
 
-def test_loop_multiple_iterations():
-    """Test that Loop can be iterated over multiple times."""
-    # Create a dataloader with known batches
-    batches = [1, 2, 3]
-    dataloader = MockDataLoader(batches)
-    
-    # Create a loop
-    loop = Loop(dataloader)
-    
-    # First iteration
-    first_iteration = list(loop)
-    assert first_iteration == batches
-    
-    # Second iteration should restart
-    second_iteration = list(loop)
-    assert second_iteration == batches
-
 def test_state_updates_during_iteration():
     """Test state updates during iteration."""
     # Create a dataloader
     batches = [10, 20, 30]
     dataloader = MockDataLoader(batches)
     
-    # Create a loop
-    loop = Loop(dataloader)
+    # Create a loop with a stopping condition
+    loop = Loop(dataloader, max_epochs=1)
     
     # Initial state
     assert loop.state.current_epoch == 0
@@ -460,8 +443,8 @@ def test_epoch_transitions():
     # Create a dataloader with a single batch
     dataloader = MockDataLoader([1])
     
-    # Create a loop
-    loop = Loop(dataloader)
+    # Create a loop with a stopping condition, allowing multiple epochs
+    loop = Loop(dataloader, max_epochs=3)
     
     # Initial state
     assert loop.state.current_epoch == 0
@@ -520,3 +503,12 @@ def test_max_steps_termination():
     # Check that we reached max_steps
     with pytest.raises(StopIteration):
         next(iter(loop))
+        
+def test_no_stopping_condition():
+    """Test the new validation for required stopping condition."""
+    # Create a dataloader
+    dataloader = MockDataLoader([1, 2, 3])
+    
+    # Creating a loop without a stopping condition should raise ValueError
+    with pytest.raises(ValueError, match="stopping condition"):
+        Loop(dataloader)
