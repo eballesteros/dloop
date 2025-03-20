@@ -1,4 +1,5 @@
 import pytest
+import time
 from dloop.loop import LoopState
 
 def test_loop_state_init():
@@ -9,6 +10,11 @@ def test_loop_state_init():
     assert state.current_epoch == 0
     assert state.global_step == 0
     assert state.local_epoch_step == 0
+    
+    # Verify start_time is a recent timestamp
+    current_time = time.time()
+    assert state.start_time <= current_time
+    assert state.start_time > current_time - 10  # Within last 10 seconds
 
 def test_loop_state_local_epoch_step():
     """Test local_epoch_step calculation."""
@@ -63,3 +69,21 @@ def test_loop_state_epoch_transitions():
     assert state.current_epoch == 1
     assert state.global_step == 8
     assert state.local_epoch_step == 3
+
+def test_elapsed_time():
+    """Test elapsed_time calculation."""
+    state = LoopState()
+    
+    # Elapsed time should start near zero
+    initial_elapsed = state.elapsed_time
+    assert initial_elapsed >= 0
+    assert initial_elapsed < 0.1  # Should be very small initially
+    
+    # Sleep briefly and check that elapsed time increases
+    time.sleep(0.1)
+    assert state.elapsed_time > initial_elapsed
+    
+    # Sleep again and verify elapsed time continues to increase
+    previous_elapsed = state.elapsed_time
+    time.sleep(0.1)
+    assert state.elapsed_time > previous_elapsed

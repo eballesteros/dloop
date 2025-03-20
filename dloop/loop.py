@@ -1,3 +1,5 @@
+import time
+
 class LoopEvents:
     """Standard events for the training loop."""
     pass
@@ -8,11 +10,17 @@ class LoopState:
         self.current_epoch = 0
         self.global_step = 0
         self._last_epoch_change_step = 0
+        self.start_time = time.time()
         
     @property
     def local_epoch_step(self):
         """Steps in current epoch."""
         return self.global_step - self._last_epoch_change_step
+        
+    @property
+    def elapsed_time(self):
+        """Time elapsed since loop start in seconds."""
+        return time.time() - self.start_time
     
     def increment_epoch(self):
         """
