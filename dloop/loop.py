@@ -139,3 +139,28 @@ class Loop:
         """
         # Will later handle exception catching and state saving
         return False  # Don't suppress exceptions for now
+        
+    def __iter__(self):
+        """Iterator interface.
+        
+        Returns:
+            self: The Loop instance
+        """
+        self._iterator = iter(self.dataloader)
+        return self
+        
+    def __next__(self):
+        """Get next batch.
+        
+        Returns:
+            The next batch from the dataloader
+            
+        Raises:
+            StopIteration: When iteration should end
+        """
+        try:
+            batch = next(self._iterator)
+            return batch
+        except StopIteration:
+            # Will handle epoch transitions later
+            raise

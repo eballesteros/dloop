@@ -365,3 +365,59 @@ def test_loop_exit_with_exception():
     assert loop.exc_info[0] is ValueError
     assert str(loop.exc_info[1]) == "Test exception"
     assert loop.exc_info[2] is not None
+
+def test_loop_iteration():
+    """Test that Loop can be iterated over."""
+    # Create a dataloader with known batches
+    batches = [10, 20, 30]
+    dataloader = MockDataLoader(batches)
+    
+    # Create a loop
+    loop = Loop(dataloader)
+    
+    # Iterate over the loop
+    collected_batches = []
+    for batch in loop:
+        collected_batches.append(batch)
+    
+    # Check that we got the expected batches
+    assert collected_batches == batches
+
+def test_loop_next():
+    """Test that __next__ returns batches from the dataloader."""
+    # Create a dataloader with known batches
+    batches = [100, 200, 300, 400]
+    dataloader = MockDataLoader(batches)
+    
+    # Create a loop
+    loop = Loop(dataloader)
+    
+    # Initialize the iterator
+    iter(loop)
+    
+    # Get batches one by one
+    assert next(loop) == 100
+    assert next(loop) == 200
+    assert next(loop) == 300
+    assert next(loop) == 400
+    
+    # Should raise StopIteration when exhausted
+    with pytest.raises(StopIteration):
+        next(loop)
+
+def test_loop_multiple_iterations():
+    """Test that Loop can be iterated over multiple times."""
+    # Create a dataloader with known batches
+    batches = [1, 2, 3]
+    dataloader = MockDataLoader(batches)
+    
+    # Create a loop
+    loop = Loop(dataloader)
+    
+    # First iteration
+    first_iteration = list(loop)
+    assert first_iteration == batches
+    
+    # Second iteration should restart
+    second_iteration = list(loop)
+    assert second_iteration == batches
