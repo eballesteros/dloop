@@ -286,3 +286,82 @@ def test_loop_with_deque():
     
     # Check dataloader is stored
     assert loop.dataloader is dataloader
+
+def test_loop_context_manager():
+    """Test Loop as a context manager."""
+    # Create a dataloader
+    dataloader = MockDataLoader([1, 2, 3])
+    
+    # Use Loop as a context manager
+    with Loop(dataloader) as loop:
+        # Check that __enter__ returns the Loop instance
+        assert isinstance(loop, Loop)
+        assert loop.dataloader is dataloader
+        
+        # Do something with the loop
+        assert loop.state.current_epoch == 0
+        
+    # Context is exited here, __exit__ is called
+
+# ExitTracker class is no longer needed as we use subclassing instead
+
+def test_loop_exit_called():
+    """Test that __exit__ is called when exiting the context."""
+    # Create a dataloader
+    dataloader = MockDataLoader([1, 2, 3])
+    
+    # Create a loop with a custom __exit__ method for tracking
+    class TrackingLoop(Loop):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.exit_called = False
+            self.exc_info = None
+            
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            self.exit_called = True
+            self.exc_info = (exc_type, exc_val, exc_tb)
+            return super().__exit__(exc_type, exc_val, exc_tb)
+    
+    # Create a tracking loop
+    loop = TrackingLoop(dataloader)
+    
+    # Use the loop as a context manager
+    with loop:
+        pass
+    
+    # Check that __exit__ was called
+    assert loop.exit_called
+    assert loop.exc_info == (None, None, None)
+
+def test_loop_exit_with_exception():
+    """Test __exit__ behavior with exceptions."""
+    # Create a dataloader
+    dataloader = MockDataLoader([1, 2, 3])
+    
+    # Create a loop with a custom __exit__ method for tracking
+    class TrackingLoop(Loop):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.exit_called = False
+            self.exc_info = None
+            
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            self.exit_called = True
+            self.exc_info = (exc_type, exc_val, exc_tb)
+            return super().__exit__(exc_type, exc_val, exc_tb)
+    
+    # Create a tracking loop
+    loop = TrackingLoop(dataloader)
+    
+    # Use the loop as a context manager with an exception
+    try:
+        with loop:
+            raise ValueError("Test exception")
+    except ValueError:
+        pass  # Expected exception
+    
+    # Check that __exit__ was called with exception info
+    assert loop.exit_called
+    assert loop.exc_info[0] is ValueError
+    assert str(loop.exc_info[1]) == "Test exception"
+    assert loop.exc_info[2] is not None

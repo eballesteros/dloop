@@ -114,3 +114,28 @@ class Loop:
         
         # Will hold the dataloader iterator
         self._iterator = None
+        
+    def __enter__(self):
+        """
+        Context manager enter method.
+        
+        Returns:
+            self: The Loop instance
+        """
+        # Will later handle state loading
+        return self
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """
+        Context manager exit method.
+        
+        Args:
+            exc_type: Exception type if an exception was raised
+            exc_val: Exception value if an exception was raised
+            exc_tb: Exception traceback if an exception was raised
+        
+        Returns:
+            bool: True to suppress exceptions, False otherwise
+        """
+        # Will later handle exception catching and state saving
+        return False  # Don't suppress exceptions for now
