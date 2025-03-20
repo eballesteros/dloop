@@ -1,6 +1,6 @@
 import time
 import json
-from typing import Dict, Any, Optional, ClassVar
+from typing import Dict, Any, Optional, Iterable, Union, Iterator, ClassVar
 
 class LoopEvents:
     """Standard events for the training loop."""
@@ -83,6 +83,34 @@ class LoopState:
         )
 
 
+
 class Loop:
     """Main loop class that manages the training loop and events."""
-    pass
+    
+    def __init__(self, 
+                 dataloader: Iterable, 
+                 events: Optional[Dict[Any, Any]] = None, 
+                 max_epochs: Optional[int] = None, 
+                 max_steps: Optional[int] = None,
+                 state_file: Optional[str] = None):
+        """
+        Initialize the loop.
+        
+        Args:
+            dataloader: DataLoader providing batches
+            events: Dictionary mapping event keys to Event instances
+            max_epochs: Maximum number of epochs
+            max_steps: Maximum number of steps
+            state_file: Path to save/load loop state
+        """
+        self.dataloader = dataloader
+        self.events = events or {}
+        self.max_epochs = max_epochs
+        self.max_steps = max_steps
+        self.state_file = state_file
+        
+        # Initialize state
+        self.state = LoopState()
+        
+        # Will hold the dataloader iterator
+        self._iterator = None

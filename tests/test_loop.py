@@ -1,7 +1,8 @@
 import pytest
 import time
 import json
-from dloop.loop import LoopState
+from collections import deque
+from dloop.loop import LoopState, Loop
 
 def test_loop_state_init():
     """Test LoopState initialization with default values."""
@@ -188,3 +189,100 @@ def test_json_serialization():
     assert loaded_state.global_step == 150
     assert loaded_state._last_epoch_change_step == 120
     assert loaded_state.local_epoch_step == 30
+
+# Simple mock dataloader for testing
+class MockDataLoader:
+    def __init__(self, batches):
+        self.batches = batches
+        
+    def __iter__(self):
+        return iter(self.batches)
+
+# Tests for Loop class
+def test_loop_init_basic():
+    """Test Loop initialization with basic parameters."""
+    # Create a simple dataloader
+    dataloader = MockDataLoader([1, 2, 3])
+    
+    # Create a loop with minimal parameters
+    loop = Loop(dataloader)
+    
+    # Check dataloader is stored
+    assert loop.dataloader is dataloader
+    
+    # Check defaults
+    assert loop.events == {}
+    assert loop.max_epochs is None
+    assert loop.max_steps is None
+    assert loop.state_file is None
+    
+    # Check state is initialized
+    assert isinstance(loop.state, LoopState)
+    assert loop.state.current_epoch == 0
+    assert loop.state.global_step == 0
+
+def test_loop_init_with_params():
+    """Test Loop initialization with all parameters."""
+    # Create a dataloader
+    dataloader = MockDataLoader([1, 2, 3])
+    
+    # Create events dict
+    events = {"event1": "handler1", "event2": "handler2"}
+    
+    # Create loop with all parameters
+    loop = Loop(
+        dataloader=dataloader,
+        events=events,
+        max_epochs=5,
+        max_steps=100,
+        state_file="/tmp/state.json"
+    )
+    
+    # Check all parameters are stored
+    assert loop.dataloader is dataloader
+    assert loop.events == events
+    assert loop.max_epochs == 5
+    assert loop.max_steps == 100
+    assert loop.state_file == "/tmp/state.json"
+    
+    # Check state is initialized
+    assert isinstance(loop.state, LoopState)
+
+def test_loop_with_events():
+    """Test Loop with event dictionary."""
+    # Create a dataloader
+    dataloader = MockDataLoader([1, 2, 3])
+    
+    # Create events with different types of keys
+    from enum import Enum, auto
+    
+    class TestEvents(Enum):
+        EVENT1 = auto()
+        EVENT2 = auto()
+    
+    # Create a dictionary with different types of event keys
+    events = {
+        "string_event": "handler1",
+        TestEvents.EVENT1: "handler2",
+        123: "handler3"
+    }
+    
+    # Create loop with events
+    loop = Loop(dataloader=dataloader, events=events)
+    
+    # Check events are stored correctly
+    assert loop.events == events
+    assert loop.events["string_event"] == "handler1"
+    assert loop.events[TestEvents.EVENT1] == "handler2"
+    assert loop.events[123] == "handler3"
+
+def test_loop_with_deque():
+    """Test Loop with a deque as dataloader."""
+    # Create a deque as dataloader
+    dataloader = deque([1, 2, 3])
+    
+    # Create loop
+    loop = Loop(dataloader)
+    
+    # Check dataloader is stored
+    assert loop.dataloader is dataloader
