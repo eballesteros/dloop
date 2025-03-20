@@ -1,10 +1,7 @@
 import time
 import json
-from typing import Dict, Any, Optional, Iterable, Union, Iterator, ClassVar
-
-class LoopEvents:
-    """Standard events for the training loop."""
-    pass
+from typing import Dict, Any, Optional, Iterable, Union, Iterator, ClassVar, Set, Tuple
+from dloop.events import LoopEvents
 
 class LoopState:
     def __init__(self, 
@@ -27,7 +24,7 @@ class LoopState:
         self.start_time = time.time() if start_time is None else start_time
         
     @property
-    def local_epoch_step(self):
+    def epoch_step(self):
         """Steps in current epoch."""
         return self.global_step - self._last_epoch_change_step
         
@@ -116,8 +113,8 @@ class Loop:
         if self.max_epochs is None and self.max_steps is None:
             raise ValueError("At least one stopping condition (max_epochs or max_steps) must be provided")
         
-        # Initialize state
-        self.state = LoopState()
+        # Initialize state, not meant to be accessed from the outside
+        self._state = LoopState()
         
         # Will hold the dataloader iterator
         self._iterator = None
@@ -158,36 +155,41 @@ class Loop:
         return self
         
     def __next__(self):
-        """Get next batch.
+        """Get next batch and triggered events.
         
         Returns:
-            The next batch from the dataloader
+            tuple: (batch, triggered_events) where:
+                - batch is the next batch from the dataloader
+                - triggered_events is a set of event keys that should trigger
             
         Raises:
             StopIteration: When iteration should end
         """
         # Check termination conditions
-        if self.max_epochs is not None and self.state.current_epoch >= self.max_epochs:
+        if self.max_epochs is not None and self._state.current_epoch >= self.max_epochs:
             raise StopIteration("Reached maximum number of epochs")
             
-        if self.max_steps is not None and self.state.global_step >= self.max_steps:
+        if self.max_steps is not None and self._state.global_step >= self.max_steps:
             raise StopIteration("Reached maximum number of steps")
+        
+        # Check each event to see if it should trigger, before we modify the state
+        # Determine which events should trigger
+        triggered_events = set()
+        for event_key, event in self.events.items():
+            if event.should_trigger(self._state):
+                triggered_events.add(event_key)
         
         try:
             # Try to get next batch from current epoch
             batch = next(self._iterator)
             
-            # Update step counter
-            self.state.increment_step()
-            
-            return batch
-            
         except StopIteration:
             # End of epoch reached, increment epoch counter
-            self.state.increment_epoch()
+            self._state.increment_epoch()
+            triggered_events.add(LoopEvents.EPOCH_END)
             
             # Check if we've reached max_epochs after incrementing
-            if self.max_epochs is not None and self.state.current_epoch >= self.max_epochs:
+            if self.max_epochs is not None and self._state.current_epoch >= self.max_epochs:
                 raise StopIteration("Reached maximum number of epochs")
             
             # Start a new iterator for the next epoch and continue
@@ -196,7 +198,7 @@ class Loop:
             # Get the first batch of the new epoch
             batch = next(self._iterator)
             
-            # Update step counter for this new batch too
-            self.state.increment_step()
-            
-            return batch
+        # Update step counter for this new batch too
+        self._state.increment_step()
+        
+        return batch, triggered_events

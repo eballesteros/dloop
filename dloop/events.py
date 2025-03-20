@@ -41,17 +41,13 @@ class Event:
         Determine if the event should trigger based on current loop state.
         
         Args:
-            loop_state: Current state of the loop
+            loop_state: Current LoopState instance
             
         Returns:
             bool: True if the event should trigger, False otherwise
         """
         # Get the current step from loop state
-        current_step = loop_state.get("local_step", 0)
-        
-        # Never trigger at step 0 or negative steps
-        if current_step <= 0:
-            return False
+        current_step = loop_state.epoch_step
         
         # Check every_n_steps condition (0-indexed, triggers at steps 3, 7, 11, etc. for every_n_steps=4)
         if self.every_n_steps is not None:

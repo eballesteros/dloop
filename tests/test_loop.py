@@ -3,6 +3,7 @@ import time
 import json
 from collections import deque
 from dloop.loop import LoopState, Loop
+from dloop.events import Event, LoopEvents
 
 def test_loop_state_init():
     """Test LoopState initialization with default values."""
@@ -11,39 +12,40 @@ def test_loop_state_init():
     # Check initial values
     assert state.current_epoch == 0
     assert state.global_step == 0
-    assert state.local_epoch_step == 0
+    assert state.epoch_step == 0
     
     # Verify start_time is a recent timestamp
     current_time = time.time()
     assert state.start_time <= current_time
     assert state.start_time > current_time - 10  # Within last 10 seconds
 
-def test_loop_state_local_epoch_step():
-    """Test local_epoch_step calculation."""
+def test_loop_state_epoch_step():
+    """Test epoch_step calculation."""
     state = LoopState()
     
     # Should start at 0
-    assert state.local_epoch_step == 0
+    assert state.epoch_step == 0
+    assert state.global_step == 0
     
-    # Increment steps and check local_epoch_step
+    # Increment steps and check epoch_step
     state.increment_step()
     assert state.global_step == 1
-    assert state.local_epoch_step == 1
+    assert state.epoch_step == 1
     
     state.increment_step()
     assert state.global_step == 2
-    assert state.local_epoch_step == 2
+    assert state.epoch_step == 2
     
-    # Increment epoch and check local_epoch_step resets
+    # Increment epoch and check epoch_step resets
     state.increment_epoch()
     assert state.current_epoch == 1
     assert state.global_step == 2
-    assert state.local_epoch_step == 0
+    assert state.epoch_step == 0
     
     # Add more steps in the new epoch
     state.increment_step()
     assert state.global_step == 3
-    assert state.local_epoch_step == 1
+    assert state.epoch_step == 1
 
 def test_loop_state_epoch_transitions():
     """Test epoch transitions and step counting."""
@@ -55,14 +57,14 @@ def test_loop_state_epoch_transitions():
     
     assert state.current_epoch == 0
     assert state.global_step == 5
-    assert state.local_epoch_step == 5
+    assert state.epoch_step == 5
     
     # Transition to next epoch
     state.increment_epoch()
     
     assert state.current_epoch == 1
     assert state.global_step == 5
-    assert state.local_epoch_step == 0
+    assert state.epoch_step == 0
     
     # Simulate second epoch
     for _ in range(3):
@@ -70,7 +72,7 @@ def test_loop_state_epoch_transitions():
     
     assert state.current_epoch == 1
     assert state.global_step == 8
-    assert state.local_epoch_step == 3
+    assert state.epoch_step == 3
 
 def test_elapsed_time():
     """Test elapsed_time calculation."""
@@ -139,7 +141,7 @@ def test_loop_state_from_dict():
     assert state.global_step == 100
     assert state._last_epoch_change_step == 80
     assert state.start_time == 2000.0
-    assert state.local_epoch_step == 20  # 100 - 80
+    assert state.epoch_step == 20  # 100 - 80
 
 def test_loop_state_round_trip():
     """Test round-trip state → dict → state."""
@@ -161,7 +163,7 @@ def test_loop_state_round_trip():
     assert reconstructed.global_step == original.global_step
     assert reconstructed._last_epoch_change_step == original._last_epoch_change_step
     assert reconstructed.start_time == original.start_time
-    assert reconstructed.local_epoch_step == original.local_epoch_step
+    assert reconstructed.epoch_step == original.epoch_step
 
 def test_json_serialization():
     """Test JSON serialization of state."""
@@ -188,7 +190,7 @@ def test_json_serialization():
     assert loaded_state.current_epoch == 7
     assert loaded_state.global_step == 150
     assert loaded_state._last_epoch_change_step == 120
-    assert loaded_state.local_epoch_step == 30
+    assert loaded_state.epoch_step == 30
 
 # Simple mock dataloader for testing
 class MockDataLoader:
@@ -217,9 +219,9 @@ def test_loop_init_basic():
     assert loop.state_file is None
     
     # Check state is initialized
-    assert isinstance(loop.state, LoopState)
-    assert loop.state.current_epoch == 0
-    assert loop.state.global_step == 0
+    assert isinstance(loop._state, LoopState)
+    assert loop._state.current_epoch == 0
+    assert loop._state.global_step == 0
 
 def test_loop_init_with_params():
     """Test Loop initialization with all parameters."""
@@ -246,7 +248,7 @@ def test_loop_init_with_params():
     assert loop.state_file == "/tmp/state.json"
     
     # Check state is initialized
-    assert isinstance(loop.state, LoopState)
+    assert isinstance(loop._state, LoopState)
 
 def test_loop_with_events():
     """Test Loop with event dictionary."""
@@ -299,7 +301,7 @@ def test_loop_context_manager():
         assert loop.dataloader is dataloader
         
         # Do something with the loop
-        assert loop.state.current_epoch == 0
+        assert loop._state.current_epoch == 0
         
     # Context is exited here, __exit__ is called
 
@@ -377,7 +379,7 @@ def test_loop_iteration():
     
     # Iterate over the loop
     collected_batches = []
-    for batch in loop:
+    for batch, events in loop:
         collected_batches.append(batch)
     
     # Check that we got the expected batches
@@ -396,10 +398,21 @@ def test_loop_next():
     iter(loop)
     
     # Get batches one by one
-    assert next(loop) == 100
-    assert next(loop) == 200
-    assert next(loop) == 300
-    assert next(loop) == 400
+    batch, events = next(loop)
+    assert batch == 100
+    assert isinstance(events, set)
+    
+    batch, events = next(loop)
+    assert batch == 200
+    assert isinstance(events, set)
+    
+    batch, events = next(loop)
+    assert batch == 300
+    assert isinstance(events, set)
+    
+    batch, events = next(loop)
+    assert batch == 400
+    assert isinstance(events, set)
     
     # Should raise StopIteration when exhausted
     with pytest.raises(StopIteration):
@@ -415,28 +428,28 @@ def test_state_updates_during_iteration():
     loop = Loop(dataloader, max_epochs=1)
     
     # Initial state
-    assert loop.state.current_epoch == 0
-    assert loop.state.global_step == 0
-    assert loop.state.local_epoch_step == 0
+    assert loop._state.current_epoch == 0
+    assert loop._state.global_step == 0
+    assert loop._state.epoch_step == 0
     
     # First batch
     iter(loop)  # Initialize iterator
-    batch = next(loop)
+    batch, events = next(loop)
     assert batch == 10
-    assert loop.state.global_step == 1
-    assert loop.state.local_epoch_step == 1
+    assert loop._state.global_step == 1
+    assert loop._state.epoch_step == 1
     
     # Second batch
-    batch = next(loop)
+    batch, events = next(loop)
     assert batch == 20
-    assert loop.state.global_step == 2
-    assert loop.state.local_epoch_step == 2
+    assert loop._state.global_step == 2
+    assert loop._state.epoch_step == 2
     
     # Third batch
-    batch = next(loop)
+    batch, events = next(loop)
     assert batch == 30
-    assert loop.state.global_step == 3
-    assert loop.state.local_epoch_step == 3
+    assert loop._state.global_step == 3
+    assert loop._state.epoch_step == 3
 
 def test_epoch_transitions():
     """Test epoch transitions during iteration."""
@@ -447,28 +460,30 @@ def test_epoch_transitions():
     loop = Loop(dataloader, max_epochs=3)
     
     # Initial state
-    assert loop.state.current_epoch == 0
+    assert loop._state.current_epoch == 0
     
     # First epoch
     iter(loop)
-    batch = next(loop)
+    batch, events = next(loop)
     assert batch == 1
-    assert loop.state.current_epoch == 0
-    assert loop.state.global_step == 1
+    assert loop._state.current_epoch == 0
+    assert loop._state.global_step == 1
     
     # Transition to second epoch
-    batch = next(loop)
+    batch, events = next(loop)
     assert batch == 1  # Same batch, new epoch
-    assert loop.state.current_epoch == 1
-    assert loop.state.global_step == 2
-    assert loop.state.local_epoch_step == 1  # Reset for new epoch
+    assert loop._state.current_epoch == 1
+    assert loop._state.global_step == 2
+    assert loop._state.epoch_step == 1  # Reset for new epoch
+    assert LoopEvents.EPOCH_END in events  # Should be present at epoch transition
     
     # Transition to third epoch
-    batch = next(loop)
+    batch, events = next(loop)
     assert batch == 1  # Same batch, new epoch
-    assert loop.state.current_epoch == 2
-    assert loop.state.global_step == 3
-    assert loop.state.local_epoch_step == 1
+    assert loop._state.current_epoch == 2
+    assert loop._state.global_step == 3
+    assert loop._state.epoch_step == 1
+    assert LoopEvents.EPOCH_END in events  # Should be present at epoch transition
 
 def test_max_epochs_termination():
     """Test termination at max_epochs."""
@@ -479,9 +494,12 @@ def test_max_epochs_termination():
     loop = Loop(dataloader, max_epochs=2)
     
     # Should get 2 batches (one per epoch) then stop
-    batches = list(loop)
-    assert batches == [1, 1]
-    assert loop.state.current_epoch == 2
+    collected_batches = []
+    for batch, events in loop:
+        collected_batches.append(batch)
+        
+    assert collected_batches == [1, 1]
+    assert loop._state.current_epoch == 2
     
     # Check that we reached max_epochs
     with pytest.raises(StopIteration):
@@ -496,9 +514,12 @@ def test_max_steps_termination():
     loop = Loop(dataloader, max_steps=3)
     
     # Should get 3 batches then stop
-    batches = list(loop)
-    assert batches == [1, 2, 3]
-    assert loop.state.global_step == 3
+    collected_batches = []
+    for batch, events in loop:
+        collected_batches.append(batch)
+        
+    assert collected_batches == [1, 2, 3]
+    assert loop._state.global_step == 3
     
     # Check that we reached max_steps
     with pytest.raises(StopIteration):
@@ -512,3 +533,114 @@ def test_no_stopping_condition():
     # Creating a loop without a stopping condition should raise ValueError
     with pytest.raises(ValueError, match="stopping condition"):
         Loop(dataloader)
+
+def test_event_triggering():
+    """Test that events trigger at the correct steps."""
+    # Create a dataloader with several batches
+    dataloader = MockDataLoader([1, 2, 3, 4, 5, 6, 7, 8])
+    
+    # Create events with different triggering conditions
+    events = {
+        'every_2_steps': Event(every_n_steps=2),  # Will trigger at steps 1, 3, 5, 7 (2nd, 4th, 6th, 8th iterations)
+        'at_step_3': Event(at_step=3),  # Will trigger at step 3 (4th iteration)
+        'custom_condition': Event(condition_func=lambda state: state.global_step == 5)  # Step 5
+    }
+    
+    # Create loop with events
+    loop = Loop(dataloader=dataloader, events=events, max_steps=8)
+    
+    # Iterate through the loop and check events
+    iter(loop)
+    
+    # Step 1 - first iteration, step 0 in 0-indexed counting
+    batch, triggered = next(loop)
+    assert batch == 1
+    assert len(triggered) == 0  # No events triggered at step 0
+    
+    # Step 2 - second iteration, step 1 in 0-indexed counting
+    batch, triggered = next(loop)
+    assert batch == 2
+    assert len(triggered) == 1
+    assert 'every_2_steps' in triggered  # Triggers on 1st step (0-indexed)
+    
+    # Step 3 - third iteration, step 2 in 0-indexed counting 
+    batch, triggered = next(loop)
+    assert batch == 3
+    assert len(triggered) == 0
+    
+    # Step 4 - fourth iteration, step 3 in 0-indexed counting
+    batch, triggered = next(loop)
+    assert batch == 4
+    assert len(triggered) == 2
+    assert 'every_2_steps' in triggered  # Triggers on 3rd step (0-indexed)
+    assert 'at_step_3' in triggered  # Triggers on step 3
+    
+    # Step 5 - fifth iteration, step 4 in 0-indexed counting
+    batch, triggered = next(loop)
+    assert batch == 5
+    assert len(triggered) == 0
+    
+    # Step 6 - sixth iteration, step 5 in 0-indexed counting
+    batch, triggered = next(loop)
+    assert batch == 6
+    assert len(triggered) == 2
+    assert 'every_2_steps' in triggered  # Triggers on 5th step (0-indexed)
+    assert 'custom_condition' in triggered  # Triggers when global_step is 5
+
+def test_multiple_events_trigger():
+    """Test that multiple events can trigger simultaneously."""
+    # Create a dataloader with enough batches
+    dataloader = MockDataLoader([1, 2, 3, 4, 5, 6])
+    
+    # Create events that will trigger at the same step
+    # For step 3 (fourth iteration) - remember we're 0-indexed
+    events = {
+        'event_a': Event(every_n_steps=2),  # Triggers on steps 1, 3, 5 (0-indexed)
+        'event_b': Event(at_step=3),  # Triggers on step 3 (0-indexed)
+        'event_c': Event(condition_func=lambda state: state.global_step == 3)  # When global_step is 3
+    }
+    
+    # Create loop with events
+    loop = Loop(dataloader=dataloader, events=events, max_steps=6)
+    
+    # Iterate and get to step 4 where multiple events should trigger
+    iter(loop)
+    next(loop)  # Step 1
+    next(loop)  # Step 2
+    next(loop)  # Step 3
+    
+    # Step 4 - fourth iteration, step 3 in 0-indexed counting
+    batch, triggered = next(loop)
+    assert batch == 4
+    assert len(triggered) == 3
+    assert 'event_a' in triggered  # Triggers on step 3 (0-indexed)
+    assert 'event_b' in triggered  # Triggers on step 3 (0-indexed)
+    assert 'event_c' in triggered  # Triggers when global_step is 4
+
+def test_epoch_end_event():
+    """Test that LoopEvents.EPOCH_END triggers at epoch transitions."""
+    # Create a dataloader with a few batches
+    dataloader = MockDataLoader([1, 2])
+    
+    # Create a loop with multiple epochs
+    loop = Loop(dataloader=dataloader, max_epochs=2)
+    
+    # First epoch
+    iter(loop)
+    batch, triggered = next(loop)
+    assert batch == 1
+    assert len(triggered) == 0  # No events yet
+    
+    batch, triggered = next(loop)
+    assert batch == 2
+    assert len(triggered) == 0  # No events yet
+    
+    # End of first epoch, beginning of second
+    batch, triggered = next(loop)
+    assert batch == 1  # Back to first batch of dataloader
+    assert LoopEvents.EPOCH_END in triggered  # EPOCH_END should trigger
+    
+    # Second batch of second epoch
+    batch, triggered = next(loop)
+    assert batch == 2
+    assert len(triggered) == 0  # No events for this batch
