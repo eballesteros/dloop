@@ -20,6 +20,7 @@ class LoopEvents(Enum):
     """
     EXCEPTION = auto()  # Triggered when any exception occurs
     EPOCH_END = auto()  # Triggered at the end of each epoch
+    TRAINING_END = auto()  # Triggered at the end training
 
 
 class Event:
