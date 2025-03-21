@@ -1,61 +1,46 @@
+from dataclasses import dataclass
+from typing import Union
 import pytest
 from enum import Enum, auto
-from dloop.loop import LoopState
+from dloop.types import LoopState
 from dloop.events import Event, LoopEvents
 
-def test_event_init():
-    """Test that Event can be instantiated with and without a condition function."""
-    # Test without condition function
-    event = Event()
-    assert event.condition_func is None
-    assert event.every_n_steps is None
-    assert event.at_step is None
-    
-    # Test with condition function
-    def condition_func(state):
-        return True
-    
-    event = Event(condition_func=condition_func)
-    assert event.condition_func is condition_func
-    
-    # Test with step parameters
-    event = Event(every_n_steps=5, at_step=10)
-    assert event.every_n_steps == 5
-    assert event.at_step == 10
-    
+def get_simple_state(steps: int):
+    return LoopState(epoch=0, global_step=steps, epoch_step=steps, epoch_end=False, training_end=False)
+
 def test_every_n_steps():
     """Test that every_n_steps triggers at the right steps."""
     event = Event(every_n_steps=4)
     
     # Should not trigger at step 0
-    assert event.should_trigger(LoopState(global_step=0)) is False
+    assert event.should_trigger(get_simple_state(steps=0)) is False
     
     # Should trigger at steps 3, 7, 11, etc. (0-indexed)
-    assert event.should_trigger(LoopState(global_step=3)) is True
-    assert event.should_trigger(LoopState(global_step=7)) is True
-    assert event.should_trigger(LoopState(global_step=11)) is True
+    assert event.should_trigger(get_simple_state(steps=3)) is True
+    assert event.should_trigger(get_simple_state(steps=7)) is True
+    assert event.should_trigger(get_simple_state(steps=11)) is True
     
     # Should not trigger at other steps
-    assert event.should_trigger(LoopState(global_step=1)) is False
-    assert event.should_trigger(LoopState(global_step=2)) is False
-    assert event.should_trigger(LoopState(global_step=4)) is False
-    assert event.should_trigger(LoopState(global_step=5)) is False
-    assert event.should_trigger(LoopState(global_step=6)) is False
+    assert event.should_trigger(get_simple_state(steps=1)) is False
+    assert event.should_trigger(get_simple_state(steps=2)) is False
+    assert event.should_trigger(get_simple_state(steps=4)) is False
+    assert event.should_trigger(get_simple_state(steps=5)) is False
+    assert event.should_trigger(get_simple_state(steps=6)) is False
     
 def test_at_step():
     """Test that at_step triggers only at the specified step."""
     event = Event(at_step=7)
     
     # Should not trigger at step 0
-    assert event.should_trigger(LoopState(global_step=0)) is False
+    assert event.should_trigger(get_simple_state(steps=0)) is False
     
     # Should trigger only at step 7
-    assert event.should_trigger(LoopState(global_step=7)) is True
+    assert event.should_trigger(get_simple_state(steps=7)) is True
     
     # Should not trigger at other steps
-    assert event.should_trigger(LoopState(global_step=1)) is False
-    assert event.should_trigger(LoopState(global_step=6)) is False
-    assert event.should_trigger(LoopState(global_step=8)) is False
+    assert event.should_trigger(get_simple_state(steps=1)) is False
+    assert event.should_trigger(get_simple_state(steps=6)) is False
+    assert event.should_trigger(get_simple_state(steps=8)) is False
     
 def test_multiple_conditions():
     """Test that multiple conditions work together."""
@@ -63,17 +48,17 @@ def test_multiple_conditions():
     event = Event(every_n_steps=4, at_step=5)
     
     # Should trigger at steps 3, 5, 7, 11 (steps 3 and 7 from every_n_steps=4, step 5 from at_step)
-    assert event.should_trigger(LoopState(global_step=3)) is True
-    assert event.should_trigger(LoopState(global_step=5)) is True
-    assert event.should_trigger(LoopState(global_step=7)) is True
-    assert event.should_trigger(LoopState(global_step=11)) is True
+    assert event.should_trigger(get_simple_state(steps=3)) is True
+    assert event.should_trigger(get_simple_state(steps=5)) is True
+    assert event.should_trigger(get_simple_state(steps=7)) is True
+    assert event.should_trigger(get_simple_state(steps=11)) is True
     
     # Should not trigger at other steps
-    assert event.should_trigger(LoopState(global_step=0)) is False
-    assert event.should_trigger(LoopState(global_step=1)) is False
-    assert event.should_trigger(LoopState(global_step=2)) is False
-    assert event.should_trigger(LoopState(global_step=4)) is False
-    assert event.should_trigger(LoopState(global_step=6)) is False
+    assert event.should_trigger(get_simple_state(steps=0)) is False
+    assert event.should_trigger(get_simple_state(steps=1)) is False
+    assert event.should_trigger(get_simple_state(steps=2)) is False
+    assert event.should_trigger(get_simple_state(steps=4)) is False
+    assert event.should_trigger(get_simple_state(steps=6)) is False
     
 def test_condition_func():
     """Test that custom condition function works."""
@@ -84,14 +69,14 @@ def test_condition_func():
     event = Event(condition_func=even_steps)
     
     # Should trigger at even steps (except 0)
-    assert event.should_trigger(LoopState(global_step=2)) is True
-    assert event.should_trigger(LoopState(global_step=4)) is True
-    assert event.should_trigger(LoopState(global_step=6)) is True
+    assert event.should_trigger(get_simple_state(steps=2)) is True
+    assert event.should_trigger(get_simple_state(steps=4)) is True
+    assert event.should_trigger(get_simple_state(steps=6)) is True
     
     # Should not trigger at odd steps
-    assert event.should_trigger(LoopState(global_step=1)) is False
-    assert event.should_trigger(LoopState(global_step=3)) is False
-    assert event.should_trigger(LoopState(global_step=5)) is False
+    assert event.should_trigger(get_simple_state(steps=1)) is False
+    assert event.should_trigger(get_simple_state(steps=3)) is False
+    assert event.should_trigger(get_simple_state(steps=5)) is False
     
 def test_loop_events_enum():
     """Test that LoopEvents enum can be accessed."""
@@ -131,8 +116,13 @@ def test_custom_events():
 
 def test_loop_events_as_dict_keys():
     """Test using events as dictionary keys."""
+    # Test with custom events in same dictionary
+    class TrainingEvents(Enum):
+        VALIDATION = auto()
+        LOGGING = auto()
+
     # Create a dictionary with events as keys
-    handlers = {
+    handlers: dict[Union[LoopEvents, TrainingEvents], str] = {
         LoopEvents.EXCEPTION: "exception_handler",
         LoopEvents.EPOCH_END: "epoch_end_handler"
     }
@@ -141,10 +131,6 @@ def test_loop_events_as_dict_keys():
     assert handlers[LoopEvents.EXCEPTION] == "exception_handler"
     assert handlers[LoopEvents.EPOCH_END] == "epoch_end_handler"
     
-    # Test with custom events in same dictionary
-    class TrainingEvents(Enum):
-        VALIDATION = auto()
-        LOGGING = auto()
     
     # Update dictionary with custom event
     handlers[TrainingEvents.VALIDATION] = "validation_handler"

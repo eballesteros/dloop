@@ -1,95 +1,23 @@
+import abc
+import collections.abc
 import time
 import json
-from typing import Dict, Any, Optional, Iterable, Union, Iterator, ClassVar, Set, Tuple
-from dloop.events import LoopEvents
-
-class LoopState:
-    def __init__(self, 
-                 current_epoch: int = 0,
-                 global_step: int = 0,
-                 last_epoch_change_step: int = 0,
-                 start_time: Optional[float] = None):
-        """
-        Initialize loop state tracking.
-        
-        Args:
-            current_epoch: Current epoch number (default: 0)
-            global_step: Current global step (default: 0)
-            last_epoch_change_step: Step at which the last epoch change occurred (default: 0)
-            start_time: Time when training started in seconds since epoch (default: current time)
-        """
-        self.current_epoch = current_epoch
-        self.global_step = global_step
-        self._last_epoch_change_step = last_epoch_change_step
-        self.start_time = time.time() if start_time is None else start_time
-        
-    @property
-    def epoch_step(self):
-        """Steps in current epoch."""
-        return self.global_step - self._last_epoch_change_step
-        
-    @property
-    def elapsed_time(self):
-        """Time elapsed since loop start in seconds."""
-        return time.time() - self.start_time
-    
-    def increment_epoch(self):
-        """
-        Increment the epoch counter and update epoch change tracking.
-        """
-        self.current_epoch += 1
-        self._last_epoch_change_step = self.global_step
-    
-    def increment_step(self):
-        """
-        Increment the global step counter.
-        """
-        self.global_step += 1
-        
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        Convert state to dictionary for serialization.
-        
-        Returns:
-            Dictionary containing all state information
-        """
-        return {
-            "current_epoch": self.current_epoch,
-            "global_step": self.global_step,
-            "last_epoch_change_step": self._last_epoch_change_step,
-            "start_time": self.start_time,
-            "serialized_at": time.time()
-        }
-        
-    @classmethod
-    def from_dict(cls, state_dict: Dict[str, Any]) -> 'LoopState':
-        """
-        Create state from dictionary when resuming.
-        
-        Args:
-            state_dict: Dictionary containing state information
-            
-        Returns:
-            Reconstructed LoopState object
-        """
-        return cls(
-            current_epoch=state_dict["current_epoch"],
-            global_step=state_dict["global_step"],
-            last_epoch_change_step=state_dict["last_epoch_change_step"],
-            start_time=state_dict["start_time"]
-        )
-
-
+from typing import Dict, Any, Generator, Optional, Iterable, Union, Iterator, ClassVar, Set, Tuple
+from .events import LoopEvents, Event
+from .iter_logic import get_iter_dl_with_events, NoLenIterationStrategy
 
 class Loop:
     """Main loop class that manages the training loop and events."""
     
     def __init__(self, 
                  dataloader: Iterable, 
-                 events: Optional[Dict[Any, Any]] = None, 
+                 events: Optional[Dict[Any, Event]] = None, 
                  max_epochs: Optional[int] = None, 
                  max_steps: Optional[int] = None,
-                 state_file: Optional[str] = None):
+                 state_file: Optional[str] = None,
+                 dataloader_len: Optional[int] = None,
+                 no_len_iteration_strategy: NoLenIterationStrategy = 'pairwise'
+                 ):
         """
         Initialize the loop.
         
@@ -99,6 +27,8 @@ class Loop:
             max_epochs: Maximum number of epochs
             max_steps: Maximum number of steps
             state_file: Path to save/load loop state
+            dataloader_len: length of the dataloader. If not provided, will try to be infered with len(dataloader)
+            no_len_iteration_strategy: Iteration strategy if the length of the dataloader is not provided an can not be inferred
             
         Raises:
             ValueError: If no stopping condition (max_epochs or max_steps) is provided
@@ -108,16 +38,23 @@ class Loop:
         self.max_epochs = max_epochs
         self.max_steps = max_steps
         self.state_file = state_file
+
+        # try to be infer if not provided
+        dl_len = dataloader_len or (len(self.dataloader) if isinstance(self.dataloader, collections.abc.Sized) else None)
         
         # Ensure at least one stopping condition is provided
         if self.max_epochs is None and self.max_steps is None:
             raise ValueError("At least one stopping condition (max_epochs or max_steps) must be provided")
         
-        # Initialize state, not meant to be accessed from the outside
-        self._state = LoopState()
-        
         # Will hold the dataloader iterator
-        self._iterator = None
+        self._iterator = get_iter_dl_with_events(
+            self.dataloader, 
+            dl_len=dl_len, 
+            max_epochs=max_epochs,
+            max_steps=max_steps, 
+            no_len_iteration_strategy=no_len_iteration_strategy,
+            events=events
+        )
         
     def __enter__(self):
         """
@@ -145,60 +82,4 @@ class Loop:
         return False  # Don't suppress exceptions for now
         
     def __iter__(self):
-        """Iterator interface.
-        
-        Returns:
-            self: The Loop instance
-        """
-        # Initialize the iterator from dataloader
-        self._iterator = iter(self.dataloader)
-        return self
-        
-    def __next__(self):
-        """Get next batch and triggered events.
-        
-        Returns:
-            tuple: (batch, triggered_events) where:
-                - batch is the next batch from the dataloader
-                - triggered_events is a set of event keys that should trigger
-            
-        Raises:
-            StopIteration: When iteration should end
-        """
-        # Check termination conditions
-        if self.max_epochs is not None and self._state.current_epoch >= self.max_epochs:
-            raise StopIteration("Reached maximum number of epochs")
-            
-        if self.max_steps is not None and self._state.global_step >= self.max_steps:
-            raise StopIteration("Reached maximum number of steps")
-        
-        # Check each event to see if it should trigger, before we modify the state
-        # Determine which events should trigger
-        triggered_events = set()
-        for event_key, event in self.events.items():
-            if event.should_trigger(self._state):
-                triggered_events.add(event_key)
-        
-        try:
-            # Try to get next batch from current epoch
-            batch = next(self._iterator)
-            
-        except StopIteration:
-            # End of epoch reached, increment epoch counter
-            self._state.increment_epoch()
-            triggered_events.add(LoopEvents.EPOCH_END)
-            
-            # Check if we've reached max_epochs after incrementing
-            if self.max_epochs is not None and self._state.current_epoch >= self.max_epochs:
-                raise StopIteration("Reached maximum number of epochs")
-            
-            # Start a new iterator for the next epoch and continue
-            self._iterator = iter(self.dataloader)
-            
-            # Get the first batch of the new epoch
-            batch = next(self._iterator)
-            
-        # Update step counter for this new batch too
-        self._state.increment_step()
-        
-        return batch, triggered_events
+        yield from self._iterator

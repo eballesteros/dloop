@@ -1,4 +1,6 @@
 from enum import Enum, auto, unique
+from .types import LoopState
+from functools import partial
 
 @unique
 class LoopEvents(Enum):
@@ -23,6 +25,9 @@ class LoopEvents(Enum):
     TRAINING_END = auto()  # Triggered at the end training
 
 
+def _every_n_steps(loop_state: LoopState, n_steps: int) -> bool: return (loop_state.epoch_step + 1) % n_steps == 0
+def _at_step(loop_state: LoopState, step: int) -> bool: return loop_state.global_step == step
+
 class Event:
     def __init__(self, condition_func=None, every_n_steps=None, at_step=None):
         """
@@ -33,11 +38,19 @@ class Event:
             every_n_steps (int, optional): Trigger every N steps
             at_step (int, optional): Trigger at a specific step (once)
         """
-        self.condition_func = condition_func
-        self.every_n_steps = every_n_steps
-        self.at_step = at_step
+        self._condition_funcs = []
+
+        if condition_func is not None:
+            self._condition_funcs.append(condition_func)
+
+        if every_n_steps is not None:
+            self._condition_funcs.append(partial(_every_n_steps, n_steps=every_n_steps))
+        
+        if at_step is not None:
+            self._condition_funcs.append(partial(_at_step, step=at_step))
+
     
-    def should_trigger(self, loop_state):
+    def should_trigger(self, loop_state) -> bool:
         """
         Determine if the event should trigger based on current loop state.
         
@@ -46,22 +59,5 @@ class Event:
             
         Returns:
             bool: True if the event should trigger, False otherwise
-        """
-        # Get the current step from loop state
-        current_step = loop_state.epoch_step
-        
-        # Check every_n_steps condition (0-indexed, triggers at steps 3, 7, 11, etc. for every_n_steps=4)
-        if self.every_n_steps is not None:
-            if (current_step + 1) % self.every_n_steps == 0:
-                return True
-        
-        # Check at_step condition (0-indexed)
-        if self.at_step is not None:
-            if current_step == self.at_step:
-                return True
-        
-        # Check custom condition function if provided
-        if self.condition_func is not None:
-            return self.condition_func(loop_state)
-                
-        return False
+        """     
+        return any(cf(loop_state) for cf in self._condition_funcs)
