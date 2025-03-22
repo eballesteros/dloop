@@ -1,6 +1,7 @@
-
 from enum import Enum, auto, unique
+
 from dloop import Event, Loop, LoopEvents
+
 
 def test_logging_and_gradient_accumulation():
     dl = list(range(128))
@@ -12,14 +13,14 @@ def test_logging_and_gradient_accumulation():
 
     events = {
         CustomEvents.GradientAccumulation: Event(every_n_steps=4),
-        CustomEvents.Loggig: Event(every_n_steps=16)
+        CustomEvents.Loggig: Event(every_n_steps=16),
     }
-    
+
     n_forward = 0
     n_grad_accumulation_steps = 0
     n_loggs = 0
     n_valid = 0
-    
+
     with Loop(dl, max_epochs=2, events=events) as train_loop:
         for _, batch_events in train_loop:
             n_forward += 1

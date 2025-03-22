@@ -1,0 +1,18 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.2
+    hooks:
+      - id: ruff
+        # No --fix argument means it will only check and not modify files
+      - id: ruff-format
+        args: [--check]  # Only check formatting without modifying
+  
+  # Run pytest on all files
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: poetry run pytest
+        language: system
+        pass_filenames: false
+        always_run: true
