@@ -73,7 +73,7 @@ def test_condition_func():
     def even_steps(state):
         return state.global_step % 2 == 0
 
-    event = Event(condition_func=even_steps)
+    event = Event(condition_function=even_steps)
 
     # Should trigger at even steps (except 0)
     assert event.should_trigger(get_simple_state(steps=2)) is True

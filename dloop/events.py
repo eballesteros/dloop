@@ -37,7 +37,7 @@ def _at_step(loop_state: LoopState, step: int) -> bool:
 
 
 class Event:
-    def __init__(self, condition_func=None, every_n_steps=None, at_step=None):
+    def __init__(self, condition_function=None, every_n_steps=None, at_step=None):
         """
         Initialize an event with a triggering condition.
 
@@ -46,16 +46,16 @@ class Event:
             every_n_steps (int, optional): Trigger every N steps
             at_step (int, optional): Trigger at a specific step (once)
         """
-        self._condition_funcs = []
+        self._condition_functions = []
 
-        if condition_func is not None:
-            self._condition_funcs.append(condition_func)
+        if condition_function is not None:
+            self._condition_functions.append(condition_function)
 
         if every_n_steps is not None:
-            self._condition_funcs.append(partial(_every_n_steps, n_steps=every_n_steps))
+            self._condition_functions.append(partial(_every_n_steps, n_steps=every_n_steps))
 
         if at_step is not None:
-            self._condition_funcs.append(partial(_at_step, step=at_step))
+            self._condition_functions.append(partial(_at_step, step=at_step))
 
     def should_trigger(self, loop_state) -> bool:
         """
@@ -67,4 +67,4 @@ class Event:
         Returns:
             bool: True if the event should trigger, False otherwise
         """
-        return any(cf(loop_state) for cf in self._condition_funcs)
+        return any(cf(loop_state) for cf in self._condition_functions)
