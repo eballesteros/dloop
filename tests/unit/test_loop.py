@@ -1,3 +1,4 @@
+import time
 from collections.abc import Iterable
 from enum import Enum, auto, unique
 
@@ -205,3 +206,39 @@ def test_no_stopping_condition():
     # Creating a loop without a stopping condition should raise ValueError
     with pytest.raises(ValueError, match="stopping condition"):
         Loop([1, 2, 3])
+
+
+class SlowMockDataLoader:
+    """A mock dataloader that introduces a time delay when iterating."""
+
+    def __init__(self, data: Iterable, sleep_time: float = 0.05) -> None:
+        self.data = data
+        self.sleep_time = sleep_time
+
+    def __iter__(self):
+        for item in self.data:
+            time.sleep(self.sleep_time)
+            yield item
+
+
+@pytest.mark.parametrize("dl_len", [20, None])
+def test_loop_max_seconds(dl_len):
+    """Test that Loop properly handles the max_seconds parameter."""
+    # Create a dataloader with a small delay
+    dl = SlowMockDataLoader(range(20), sleep_time=0.05)
+
+    # Create a loop with max_seconds=0.2 (should process about 4 items)
+    loop = Loop(dl, max_seconds=0.2, dataloader_len=dl_len)
+
+    # Collect the results
+    results = list(loop)
+
+    # Check that we stopped due to time limit
+    assert len(results) < 20
+
+    # Verify that the last batch has the TRAINING_END event
+    assert LoopEvents.TRAINING_END in results[-1][1]
+
+    # Verify that previous batches don't have the TRAINING_END event
+    for _batch, events in results[:-1]:
+        assert LoopEvents.TRAINING_END not in events

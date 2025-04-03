@@ -15,6 +15,7 @@ class Loop:
         events: Optional[dict[Any, Event]] = None,
         max_epochs: Optional[int] = None,
         max_steps: Optional[int] = None,
+        max_seconds: Optional[float] = None,
         state_file: Optional[str] = None,
         dataloader_len: Optional[int] = None,
         no_len_iteration_strategy: NoLenIterationStrategy = "pairwise",
@@ -27,6 +28,7 @@ class Loop:
             events: Dictionary mapping event keys to Event instances
             max_epochs: Maximum number of epochs
             max_steps: Maximum number of steps
+            max_seconds: Maximum time in seconds
             state_file: Path to save/load loop state
             dataloader_len: length of the dataloader. If not provided, will try to be inferred
                 with len(dataloader)
@@ -34,12 +36,13 @@ class Loop:
                 provided and cannot be inferred
 
         Raises:
-            ValueError: If no stopping condition (max_epochs or max_steps) is provided
+            ValueError: If no stopping condition (max_epochs, max_steps, or max_seconds) is provided
         """
         self.dataloader = dataloader
         self.events = events or {}
         self.max_epochs = max_epochs
         self.max_steps = max_steps
+        self.max_seconds = max_seconds
         self.state_file = state_file
 
         # try to infer if not provided
@@ -48,9 +51,10 @@ class Loop:
         )
 
         # Ensure at least one stopping condition is provided
-        if self.max_epochs is None and self.max_steps is None:
+        if self.max_epochs is None and self.max_steps is None and self.max_seconds is None:
             raise ValueError(
-                "At least one stopping condition (max_epochs or max_steps) must be provided"
+                "At least one stopping condition "
+                "(max_epochs, max_steps, or max_seconds) must be provided"
             )
 
         # Will hold the dataloader iterator
@@ -59,6 +63,7 @@ class Loop:
             dl_len=dl_len,
             max_epochs=max_epochs,
             max_steps=max_steps,
+            max_seconds=max_seconds,
             no_len_iteration_strategy=no_len_iteration_strategy,
             events=events,
         )

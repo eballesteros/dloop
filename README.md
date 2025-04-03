@@ -4,61 +4,61 @@ A lightweight Python library for simpler deep learning training loops.
 
 ## What is it?
 
-`dloop` is a small library that helps clean up those messy training loops without imposing a whole framework on you. It won't allow you to train a neural network in 4 lines of code, nor will it make your model perform better nor converge faster, but if you enjoy rolling your own training loops it may handle some inconveniences for you.
+`dloop` is a small library that helps clean up those messy training loops without imposing a whole framework on you. It won't allow you to train a neural network in 4 lines of code, nor will it auto-distribute your training run to thousands of GPUS, and it certainly wont make your model perform better nor converge faster... but if you enjoy rolling your own training loops it may handle some inconveniences for you.
 
-This is how your training loop could look like with `dloop`:
+Lest jump straight into an example. This is how your training loop could look like with `dloop`:
 
 ```python
 from dloop import Event, Loop, LoopEvents
 
-# << your custom events, can be triggered every_n_steps,
-# at_step, or through an arbitrary condition_function
-events = {
-    "OptimizerStep": Event(every_n_steps=16), 
-    "Logging": Event(every_n_steps=100),
-    "DecreaseLR": Event(at_step=10_000)
-}
+train_loop = Loop(
+    dataloader, 
+    max_epochs=3, # specify ONE stopping condition: epochs, steps, or time (in seconds)
+    # max_steps=50_000, # alternative: stop after 50k steps
+    # max_seconds=3600, # alternative: stop after 1 hour of training
+    events={ # [1] 
+        "ModelParametersUpdate": Event(every_n_steps=16), 
+        "Logging": Event(every_n_steps=100),
+        "DecreaseLR": Event(at_step=10_000)
+    }
+)
 
-
-with Loop(dataloader, max_epochs=3, events=events) as train_loop: # << could also have used max_steps=50_000
-    for batch, batch_events in train_loop: # << handles looping over you dataloader as many times as necessary, and stopping when appropriate
-        # Forward pass
-        loss = model(batch)
-        loss.backward()
+for batch, batch_events in train_loop: # [2]
+    # <your-code> run forward and compute gradients </your-code>
+    
+    if "ModelParametersUpdate" in batch_events: # [3]
+        # <your-code> update model parameter </your-code>
         
-        if "OptimizerStep" in batch_events: # << periodically triggered every 16 batches (gradient accumulation)
-            optimizer.step()
-            optimizer.zero_grad()
-            
-        if "Logging" in batch_events:
-            step = train_loop.global_step # << access to iteration state
-            print(f"Step {step}: Loss {loss.item():.4f}")
+    if "Logging" in batch_events: # [4]
+        # <your-code> log progress </your-code>
 
-        if "DecreaseLR" in batch_events:
-            for param_group in optimizer.param_groups:
-                param_group['lr'] *= 0.1  # decrease learning rate by factor of 10
-            
-        if LoopEvents.EPOCH_END in batch_events: # << pre-defined events, like EPOCH_END or TRAINING_END
-            validate(model, val_dataloader)
-            checkpoint(model, optimizer)
+    if "DecreaseLR" in batch_events: # [5]
+        # <your-code> decrease the learning rate </your-code>
+        
+    if LoopEvents.EPOCH_END in batch_events: # [5]
+        # <your-code> run validation? Checkpoint? </your-code>
 ```
 
-The above example had PyTorch flavour, but it should work just as well with any other framework you may want to use to write your training loops.
+- [1]: You define custom events by just giving them a name and specifying when they should be triggered. Currently, we support triggers `every_n_steps`, `at_step`, or through an arbitrary `condition_function(loop_state)`.
+- [2]: `train_loop` will yield as many batches as you've specified, and then stop when appropriate, looping over the dataloader under the hood if necessary.
+- [3, 4, 5, 6]: `batch_events` will contain events that were triggered for this iteration, allowing to handle all iteration and error related logic with simple if statements:
+    - `# 3` and `# 4` are examples of check that will evaluate to true every n steps. For example, since `ModelParametersUpdate` triggers every 16 steps, condition `# 5` will evaluate to true in steps 15, 31, 47 etc, allowing you to implement gradient accumulation.
+    - `# 5`, shows how you can use the same kind of logic for one time events (for example decreasing your LR after 10k steps).
+    - Finally, `# 6`, we show usage of other pre-defined events (like `LoopEvents.EPOCH_END` and `LoopEvents.TRAINING_END`) which are automatically added by dloop
 
-Note the absence of hideous `if (step_i + 1) % 0 == LOGGING_STEPS` style checks, and infinitely nested loops. Also, switch between training for steps vs epochs only requires changing 1 param.
+
+Note how dloop is completely framework agnostic. All `<your-code>` blocks are completely up to you to write using your preferred framework.
+
 
 ## Features
 
-- Event-based system to replace conditional checks
 - Clean loop abstraction with state tracking
+- Multiple iteration limit options (by epochs, steps, or time)
+- Event-based system to replace conditional checks
 - Framework-agnostic (works with PyTorch, JAX, TensorFlow, MLX, etc.)
 - Minimal dependencies (just Python standard library)
 - Works with any iterable data source
 
-## Coming soon
-
-- Exceptions as Events, no more humongous try-except blocks
-- Time base iteration limits and event triggers
 
 ## Installation
 

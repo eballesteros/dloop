@@ -1,4 +1,5 @@
 import math
+import time
 from collections.abc import Generator, Iterable
 from typing import Any, Literal, Optional
 
@@ -25,32 +26,63 @@ except ImportError:  # python < 3.10
 Batch = Any
 
 
-def _check_arguments(max_epochs: Optional[int] = None, max_steps: Optional[int] = None) -> None:
-    # one needs to be none, the other not none
-    if (max_epochs is None) == (max_steps is None):
+def _check_arguments(
+    max_epochs: Optional[int] = None,
+    max_steps: Optional[int] = None,
+    max_seconds: Optional[float] = None,
+) -> None:
+    # Count how many stopping criteria are provided
+    criteria_count = sum(x is not None for x in [max_epochs, max_steps, max_seconds])
+
+    # Ensure exactly one stopping criterion is provided
+    if criteria_count != 1:
         raise ValueError(
-            f"One and only one of max_epochs and max_steps should be different from None.\n"
-            f"Got {max_epochs=} {max_steps=}"
+            f"Exactly one of max_epochs, max_steps, or max_seconds must be specified.\n"
+            f"Got {max_epochs=}, {max_steps=}, {max_seconds=}"
         )
 
 
 def iter_dl_known_length(
-    dl: Iterable, dl_len: int, max_epochs: Optional[int] = None, max_steps: Optional[int] = None
+    dl: Iterable,
+    dl_len: int,
+    max_epochs: Optional[int] = None,
+    max_steps: Optional[int] = None,
+    max_seconds: Optional[float] = None,
 ) -> Generator[tuple[Batch, LoopState], None, None]:
     """ """
-    _check_arguments(max_epochs=max_epochs, max_steps=max_steps)
-    n_epochs = max_epochs or math.ceil(max_steps / dl_len)  # type: ignore
+    _check_arguments(max_epochs=max_epochs, max_steps=max_steps, max_seconds=max_seconds)
+
+    # Set n_epochs for epoch or step based limits
+    if max_epochs is not None:
+        n_epochs = max_epochs
+    elif max_steps is not None:
+        n_epochs = math.ceil(max_steps / dl_len)
+    else:  # max_seconds is not None
+        # For time-based limits, we'll just use a very large number of epochs
+        # and rely on the time check to stop iteration
+        n_epochs = float("inf")
+
+    # Record start time for time-based iteration
+    start_time = time.time()
 
     global_step = 0
     last_epoch = False
-    for epoch in range(n_epochs):
-        if epoch == n_epochs - 1:
+    for epoch in range(
+        int(n_epochs) if n_epochs != float("inf") else 10**9
+    ):  # Large but not infinite for int range
+        if epoch == n_epochs - 1 and n_epochs != float("inf"):
             last_epoch = True
 
         for epoch_step, batch in enumerate(dl):
-            # both mean "after we yield this batch"
+            # Check all stopping conditions
             max_steps_reached = max_steps is not None and global_step == max_steps - 1
+            time_limit_reached = (
+                max_seconds is not None and (time.time() - start_time) >= max_seconds
+            )
             epoch_end = epoch_step == dl_len - 1
+
+            # Training ends if any limit is reached
+            training_end = max_steps_reached or time_limit_reached or (last_epoch and epoch_end)
 
             yield (
                 batch,
@@ -59,25 +91,31 @@ def iter_dl_known_length(
                     global_step=global_step,
                     epoch_step=epoch_step,
                     epoch_end=epoch_end,
-                    training_end=max_steps_reached or (last_epoch and epoch_end),
+                    training_end=training_end,
                 ),
             )
 
-            if max_steps_reached:
+            if max_steps_reached or time_limit_reached:
                 return
 
             global_step += 1
 
 
 def iter_dl_unknown_length_with_pairwise_load(
-    dl: Iterable, max_epochs: Optional[int] = None, max_steps: Optional[int] = None
+    dl: Iterable,
+    max_epochs: Optional[int] = None,
+    max_steps: Optional[int] = None,
+    max_seconds: Optional[float] = None,
 ) -> Generator[tuple[Batch, LoopState], None, None]:
     """
     Within each epoch, iterates over pairwise(dl) to be able to tell when the
     epoch is done before yielding the last batch.
     It's equivalent to efficiently peeking the next batch in the dl.
     """
-    _check_arguments(max_epochs=max_epochs, max_steps=max_steps)
+    _check_arguments(max_epochs=max_epochs, max_steps=max_steps, max_seconds=max_seconds)
+
+    # Record start time for time-based iteration
+    start_time = time.time()
 
     global_step = 0
     epoch = 0
@@ -89,11 +127,14 @@ def iter_dl_unknown_length_with_pairwise_load(
             # we always yield the first batch of the pair.
             # pairwise handles batch = next_batch, next_batch = next(dl) for us
 
-            # "after we yield this batch"
+            # Check all stopping conditions
             max_steps_reached = max_steps is not None and global_step == max_steps - 1
-            # at this point, the epoch hasn't ended, so the only way training ended is if
-            # max_steps_reached
-            training_end = max_steps_reached
+            time_limit_reached = (
+                max_seconds is not None and (time.time() - start_time) >= max_seconds
+            )
+
+            # at this point, the epoch hasn't ended, so training ends if steps or time limit reached
+            training_end = max_steps_reached or time_limit_reached
 
             yield (
                 batch,
@@ -102,8 +143,6 @@ def iter_dl_unknown_length_with_pairwise_load(
                     global_step=global_step,
                     epoch_step=epoch_step,
                     epoch_end=False,
-                    # at this point, the epoch hasn't ended, so the only way training ended is if
-                    # max_steps_reached
                     training_end=training_end,
                 ),
             )
@@ -116,9 +155,13 @@ def iter_dl_unknown_length_with_pairwise_load(
         # If we exited the previous loop, it means next_batch = next(dl) failed because
         # the dl was exhausted and therefore next_batch is the last batch of the epoch.
 
-        # we're at the end of the epoch, so if it were the last epoch we'd be done training
+        # Check stopping conditions for the last batch in the epoch
         max_steps_reached = max_steps is not None and global_step == max_steps - 1
-        training_end = max_steps_reached or last_epoch
+        time_limit_reached = max_seconds is not None and (time.time() - start_time) >= max_seconds
+
+        # we're at the end of the epoch, so training ends if any limit is reached
+        training_end = max_steps_reached or time_limit_reached or last_epoch
+
         yield (
             next_batch,  # type: ignore
             LoopState(
@@ -145,12 +188,13 @@ def get_iter_dl_with_events(
     dl_len: Optional[int] = None,
     max_epochs: Optional[int] = None,
     max_steps: Optional[int] = None,
+    max_seconds: Optional[float] = None,
     events: Optional[dict[Any, Event]] = None,
     no_len_iteration_strategy: NoLenIterationStrategy = "pairwise",
 ) -> Generator[tuple[Any, set[LoopEvents]], None, None]:
     """ """
     events = events or {}
-    kwargs = {"max_epochs": max_epochs, "max_steps": max_steps}
+    kwargs = {"max_epochs": max_epochs, "max_steps": max_steps, "max_seconds": max_seconds}
     if dl_len is not None:
         kwargs["dl_len"] = dl_len
         iter_f = iter_dl_known_length
