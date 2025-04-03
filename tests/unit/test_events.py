@@ -1,5 +1,6 @@
 from enum import Enum, auto
 from typing import Union
+from unittest import mock
 
 from dloop.events import Event, LoopEvents
 from dloop.types import LoopState
@@ -151,3 +152,108 @@ def test_loop_events_as_dict_keys():
     assert handlers[TrainingEvents.VALIDATION] == "validation_handler"
     assert handlers[TrainingEvents.LOGGING] == "logging_handler"
     assert handlers[LoopEvents.EXCEPTION] == "exception_handler"
+
+
+def test_every_n_seconds():
+    """Test that every_n_seconds triggers at the right intervals."""
+    # Create a state to pass (value doesn't matter for time-based events)
+    state = get_simple_state(steps=0)
+
+    # Mock time.time() to control the clock
+    with mock.patch("time.time") as mock_time:
+        # Start at time 100
+        mock_time.return_value = 100
+
+        # Create event that triggers every 5 seconds
+        event = Event(every_n_seconds=5)
+
+        # At time=100, shouldn't trigger yet (just initialized)
+        assert event.should_trigger(state) is False
+
+        # Move clock forward 3 seconds (not enough time)
+        mock_time.return_value = 103
+        assert event.should_trigger(state) is False
+
+        # Move clock forward 3 more seconds (total 6s since start, enough time)
+        mock_time.return_value = 106
+        assert event.should_trigger(state) is True
+
+        # Clock at 106, but we just triggered, so should be false again
+        assert event.should_trigger(state) is False
+
+        # Move clock forward another 5 seconds
+        mock_time.return_value = 111
+        assert event.should_trigger(state) is True
+
+        # Clock at 111, just triggered again
+        assert event.should_trigger(state) is False
+
+        # Move clock forward 4 seconds (not enough)
+        mock_time.return_value = 115
+        assert event.should_trigger(state) is False
+
+        # Move clock forward 1 more second (exactly 5s)
+        mock_time.return_value = 116
+        assert event.should_trigger(state) is True
+
+
+def test_at_time():
+    """Test that at_time triggers once at the specified time."""
+    # Create a state to pass (value doesn't matter for time-based events)
+    state = get_simple_state(steps=0)
+
+    # Mock time.time() to control the clock
+    with mock.patch("time.time") as mock_time:
+        # Start at time 100
+        mock_time.return_value = 100
+
+        # Create event that triggers 10 seconds after start
+        event = Event(at_time=10)
+
+        # At time=100, shouldn't trigger yet
+        assert event.should_trigger(state) is False
+
+        # At time=109, still not enough time
+        mock_time.return_value = 109
+        assert event.should_trigger(state) is False
+
+        # At time=110 (10s after start), should trigger
+        mock_time.return_value = 110
+        assert event.should_trigger(state) is True
+
+        # Already triggered, should only trigger once
+        mock_time.return_value = 120
+        assert event.should_trigger(state) is False
+
+        # Even much later, should still not trigger again
+        mock_time.return_value = 200
+        assert event.should_trigger(state) is False
+
+
+def test_mixed_time_and_step_conditions():
+    """Test events with both time and step conditions."""
+
+    # Mock time.time() to control the clock
+    with mock.patch("time.time") as mock_time:
+        # Start at time 100
+        mock_time.return_value = 100
+
+        # Event with both step and time conditions
+        event = Event(every_n_steps=4, every_n_seconds=10)
+
+        # Should trigger due to steps, even though time condition isn't met
+        assert event.should_trigger(get_simple_state(steps=3)) is True
+
+        # Should not trigger due to steps
+        assert event.should_trigger(get_simple_state(steps=1)) is False
+
+        # Move time forward to trigger time condition
+        mock_time.return_value = 111
+        assert event.should_trigger(get_simple_state(steps=1)) is True
+
+        # Time condition triggered, shouldn't trigger again until 10 more seconds
+        mock_time.return_value = 115
+        assert event.should_trigger(get_simple_state(steps=1)) is False
+
+        # Step condition should still work independently
+        assert event.should_trigger(get_simple_state(steps=3)) is True

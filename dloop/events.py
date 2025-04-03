@@ -1,3 +1,4 @@
+import time
 from enum import Enum, auto, unique
 from functools import partial
 
@@ -37,16 +38,32 @@ def _at_step(loop_state: LoopState, step: int) -> bool:
 
 
 class Event:
-    def __init__(self, condition_function=None, every_n_steps=None, at_step=None):
+    def __init__(
+        self,
+        condition_function=None,
+        every_n_steps=None,
+        at_step=None,
+        every_n_seconds=None,
+        at_time=None,
+    ):
         """
         Initialize an event with a triggering condition.
 
         Args:
-            condition_func (callable, optional): Custom function that determines when event triggers
+            condition_function (callable, optional): Custom function that determines when
+                event triggers
             every_n_steps (int, optional): Trigger every N steps
             at_step (int, optional): Trigger at a specific step (once)
+            every_n_seconds (float, optional): Trigger every N seconds of training
+            at_time (float, optional): Trigger once when training reaches this time in seconds
         """
         self._condition_functions = []
+        self._time_conditions = {}
+
+        # Track time-based event state
+        self._start_time = time.time()
+        self._last_triggered_time = self._start_time
+        self._at_time_triggered = False
 
         if condition_function is not None:
             self._condition_functions.append(condition_function)
@@ -56,6 +73,12 @@ class Event:
 
         if at_step is not None:
             self._condition_functions.append(partial(_at_step, step=at_step))
+
+        if every_n_seconds is not None:
+            self._time_conditions["every_n_seconds"] = every_n_seconds
+
+        if at_time is not None:
+            self._time_conditions["at_time"] = at_time
 
     def should_trigger(self, loop_state) -> bool:
         """
@@ -67,4 +90,25 @@ class Event:
         Returns:
             bool: True if the event should trigger, False otherwise
         """
-        return any(cf(loop_state) for cf in self._condition_functions)
+        # Check regular conditions
+        if any(cf(loop_state) for cf in self._condition_functions):
+            return True
+
+        # Check time-based conditions
+        current_time = time.time()
+
+        # Check every_n_seconds condition
+        if "every_n_seconds" in self._time_conditions:
+            interval = self._time_conditions["every_n_seconds"]
+            if current_time - self._last_triggered_time >= interval:
+                self._last_triggered_time = current_time
+                return True
+
+        # Check at_time condition (triggers once)
+        if "at_time" in self._time_conditions and not self._at_time_triggered:
+            target_time = self._time_conditions["at_time"]
+            if current_time - self._start_time >= target_time:
+                self._at_time_triggered = True
+                return True
+
+        return False
