@@ -5,6 +5,15 @@ description = "lightweight Python library that simplifies deep learning training
 authors = ["Eduardo Ballesteros <eduardo.ballesterosg@outlook.com>"]
 license = "MIT"
 readme = "README.md"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Software Development :: Libraries",
+    "Intended Audience :: Developers",
+]
+homepage = "https://github.com/eballesteros/dloop"
+repository = "https://github.com/eballesteros/dloop"
 
 [tool.poetry.dependencies]
 python = "^3.9"
