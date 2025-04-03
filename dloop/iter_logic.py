@@ -49,7 +49,22 @@ def iter_dl_known_length(
     max_steps: Optional[int] = None,
     max_seconds: Optional[float] = None,
 ) -> Generator[tuple[Batch, LoopState], None, None]:
-    """ """
+    """
+    Iterate over a dataloader with known length, yielding batches and their state.
+
+    This function handles iteration when we know the length of the dataloader,
+    and supports stopping based on max_epochs, max_steps, or max_seconds.
+
+    Args:
+        dl: The dataloader to iterate over
+        dl_len: Length of the dataloader
+        max_epochs: Maximum number of epochs to iterate
+        max_steps: Maximum number of steps to iterate
+        max_seconds: Maximum number of seconds to iterate
+
+    Returns:
+        Generator yielding (batch, loop_state) tuples
+    """
     _check_arguments(max_epochs=max_epochs, max_steps=max_steps, max_seconds=max_seconds)
 
     # Set n_epochs for epoch or step based limits
@@ -192,7 +207,27 @@ def get_iter_dl_with_events(
     events: Optional[dict[Any, Event]] = None,
     no_len_iteration_strategy: NoLenIterationStrategy = "pairwise",
 ) -> Generator[tuple[Any, set[LoopEvents]], None, None]:
-    """ """
+    """
+    Create an iterator that yields batches along with triggered events.
+
+    This function selects the appropriate iteration strategy based on whether the
+    dataloader length is known, and adds event tracking to each yielded batch.
+    If dl_len is not provided, it will use the specified strategy for handling
+    dataloaders with unknown length.
+
+    Args:
+        dl: The dataloader to iterate over
+        dl_len: Optional length of the dataloader (if known)
+        max_epochs: Maximum number of epochs to iterate
+        max_steps: Maximum number of steps to iterate
+        max_seconds: Maximum number of seconds to iterate
+        events: Dictionary mapping event keys to Event instances
+        no_len_iteration_strategy: Strategy to use for dataloaders with unknown length
+
+    Returns:
+        Generator yielding (batch, batch_events) tuples, where batch_events is a set
+        of events that were triggered for this iteration
+    """
     events = events or {}
     kwargs = {"max_epochs": max_epochs, "max_steps": max_steps, "max_seconds": max_seconds}
     if dl_len is not None:
