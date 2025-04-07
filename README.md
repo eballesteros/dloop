@@ -79,6 +79,65 @@ Note how dloop is completely framework agnostic. All `<your-code>` blocks are co
 pip install dloop
 ```
 
+## Development
+
+### Release Process
+
+This project uses a streamlined release process to publish to PyPI automatically when a release branch is merged to main.
+
+#### Automated CI/CD Pipeline
+
+When a branch following the pattern `release/vX.Y.Z` is merged into `main`, our CI/CD pipeline automatically:
+
+1. Verifies that the version in the branch name matches the version in `pyproject.toml`
+2. Runs linting and tests as quality gates
+3. Builds the Python package
+4. Creates a GitHub release with the version tag and package files
+5. Publishes the package to PyPI
+
+#### Making a New Release
+
+To release a new version:
+
+1. Start from the latest `main` and update the version:
+    ```bash
+    git checkout main
+    git pull origin main
+
+    # Bump the version
+    poetry version patch  # or minor or major
+
+    # Store the new version in a variable
+    VERSION=$(poetry version --short)
+    ```
+
+2. Create a release branch with the correct version name:
+    ```bash
+    git checkout -b release/v$VERSION
+    ```
+
+3. Make any other release-specific changes.
+
+4. Commit your changes:
+    ```bash
+    git add pyproject.toml
+    git commit -m "Prepare release $VERSION"
+    ```
+
+5. Push the release branch and create a Pull Request:
+    ```bash
+    # Create a PR targeting main using the GitHub UI
+    git push -u origin release/v$VERSION
+    ```
+
+6. After code review, merge the PR into `main`.
+
+7. The CI/CD pipeline will automatically handle the rest:
+   - Creating a git tag
+   - Creating a GitHub release with release notes
+   - Publishing to PyPI
+
+
 ## License
 
 MIT License

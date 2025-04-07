@@ -1,0 +1,102 @@
+name: Publish to PyPI
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+jobs:
+  check_release_branch:
+    # Only run when PR is merged (not when closed without merging)
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    outputs:
+      is_release: ${{ steps.check.outputs.is_release }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - id: check
+        name: Check if merged from release branch
+        run: |
+          BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+          echo "Merged branch: $BRANCH_NAME"
+          
+          # Check if it's a release branch
+          if [[ $BRANCH_NAME =~ ^release/v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "Release branch detected"
+            # Extract version from branch name
+            VERSION=$(echo $BRANCH_NAME | sed 's/^release\/v//')
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "is_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "Not a release branch"
+            echo "is_release=false" >> $GITHUB_OUTPUT
+          fi
+
+  publish:
+    needs: check_release_branch
+    if: needs.check_release_branch.outputs.is_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: 1.8.5
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+    
+    - name: Install dependencies
+      run: |
+        poetry install
+    
+    - name: Verify release version matches pyproject.toml
+      run: |
+        # Extract version from pyproject.toml
+        PROJECT_VERSION=$(poetry version --short)
+        # Get detected version from previous job
+        RELEASE_VERSION="${{ needs.check_release_branch.outputs.version }}"
+        
+        echo "Project version: $PROJECT_VERSION"
+        echo "Release version: $RELEASE_VERSION"
+        
+        # Check if versions match
+        if [ "$PROJECT_VERSION" != "$RELEASE_VERSION" ]; then
+          echo "Error: Release version ($RELEASE_VERSION) does not match version in pyproject.toml ($PROJECT_VERSION)"
+          exit 1
+        fi
+    
+    - name: Lint and test
+      run: |
+        poetry run make lint
+        poetry run make test
+    
+    - name: Build package
+      run: |
+        poetry build
+      
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v${{ needs.check_release_branch.outputs.version }}
+        name: Release v${{ needs.check_release_branch.outputs.version }}
+        draft: false
+        prerelease: false
+        files: |
+          dist/*
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Publish to PyPI
+      env:
+        PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
+      run: |
+        poetry config pypi-token.pypi $PYPI_TOKEN
+        poetry publish
