@@ -2,8 +2,8 @@ name: Publish to PyPI
 
 on:
   push:
-    tags:
-      - 'v*'  # Run when a tag starting with 'v' is pushed
+    branches:
+      - 'release/v*'  # Run when a release branch is pushed
 
 jobs:
   publish:
@@ -27,21 +27,25 @@ jobs:
       run: |
         poetry install
     
-    - name: Verify tag version matches pyproject.toml
+    - name: Extract version from branch
       run: |
+        # Extract version from branch name (remove 'release/v' prefix)
+        BRANCH_VERSION=${GITHUB_REF#refs/heads/release/v}
+        
         # Extract version from pyproject.toml
         PROJECT_VERSION=$(poetry version --short)
-        # Extract version from tag (remove 'v' prefix)
-        TAG_VERSION=${GITHUB_REF#refs/tags/v}
         
+        echo "Branch version: $BRANCH_VERSION"
         echo "Project version: $PROJECT_VERSION"
-        echo "Tag version: $TAG_VERSION"
         
         # Check if versions match
-        if [ "$PROJECT_VERSION" != "$TAG_VERSION" ]; then
-          echo "Error: Tag version ($TAG_VERSION) does not match version in pyproject.toml ($PROJECT_VERSION)"
+        if [ "$PROJECT_VERSION" != "$BRANCH_VERSION" ]; then
+          echo "Error: Branch version ($BRANCH_VERSION) does not match version in pyproject.toml ($PROJECT_VERSION)"
           exit 1
         fi
+        
+        # Set version for later steps
+        echo "VERSION=$PROJECT_VERSION" >> $GITHUB_ENV
     
     - name: Lint and test
       run: |
@@ -51,6 +55,16 @@ jobs:
     - name: Build package
       run: |
         poetry build
+    
+    - name: Create GitHub Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ env.VERSION }}
+        release_name: Release v${{ env.VERSION }}
+        draft: false
+        prerelease: false
     
     - name: Publish to PyPI
       env:
