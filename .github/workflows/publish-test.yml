@@ -1,57 +1,31 @@
-name: Test Publish Process
+name: Test Publish to PyPI
 
 on:
-  push:
+  pull_request:
+    types: [closed]
     branches:
-      - publish-ci  # Changed to your feature branch
-    paths:
-      - 'pyproject.toml'
+      - publish-ci
 
 jobs:
   check_release_branch:
+    # Only run when PR is merged (not when closed without merging)
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     outputs:
       is_release: ${{ steps.check.outputs.is_release }}
       version: ${{ steps.check.outputs.version }}
     steps:
-      - uses: actions/checkout@v3
-        with:
-          fetch-depth: 0  # Fetch all history to get merge commit details
-      
       - id: check
         name: Check if merged from release branch
         run: |
-          # Print some git history details for debugging
-          echo "Last 5 commits:"
-          git log -n 5 --oneline
-          
-          echo "Last 5 merge commits:"
-          git log --merges -n 5 --oneline
-          
-          # Try to get the most recent merge commit
-          MERGE_COMMIT=$(git log --merges -n 1 --format="%H")
-          echo "Most recent merge commit: $MERGE_COMMIT"
-          
-          # If no merge commit found, exit early
-          if [ -z "$MERGE_COMMIT" ]; then
-            echo "No merge commit found"
-            echo "is_release=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          
-          # Get the merged branch name
-          BRANCH_NAME=$(git name-rev --name-only $MERGE_COMMIT^2)
+          BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
           echo "Merged branch: $BRANCH_NAME"
-          
-          # Print the raw branch name for debugging
-          echo "Raw branch output: $(git name-rev $MERGE_COMMIT^2)"
           
           # Check if it's a release branch
           if [[ $BRANCH_NAME =~ ^release/v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
             echo "Release branch detected"
             # Extract version from branch name
             VERSION=$(echo $BRANCH_NAME | sed 's/^release\/v//')
-            echo "Extracted version: $VERSION"
             echo "version=$VERSION" >> $GITHUB_OUTPUT
             echo "is_release=true" >> $GITHUB_OUTPUT
           else
