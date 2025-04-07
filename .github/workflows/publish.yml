@@ -1,37 +1,24 @@
 name: Publish to PyPI
 
 on:
-  push:
+  pull_request:
+    types: [closed]
     branches:
       - main
-    paths:
-      - 'pyproject.toml'  # Only trigger when pyproject.toml changes
 
 jobs:
   check_release_branch:
+    # Only run when PR is merged (not when closed without merging)
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     outputs:
       is_release: ${{ steps.check.outputs.is_release }}
       version: ${{ steps.check.outputs.version }}
     steps:
-      - uses: actions/checkout@v3
-        with:
-          fetch-depth: 0  # Fetch all history to get merge commit details
-      
       - id: check
         name: Check if merged from release branch
         run: |
-          # Get the most recent merge commit to main
-          MERGE_COMMIT=$(git log --merges -n 1 --format="%H")
-          
-          # If no merge commit found, exit early
-          if [ -z "$MERGE_COMMIT" ]; then
-            echo "is_release=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          
-          # Get the merged branch name
-          BRANCH_NAME=$(git name-rev --name-only $MERGE_COMMIT^2)
+          BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
           echo "Merged branch: $BRANCH_NAME"
           
           # Check if it's a release branch
@@ -103,7 +90,7 @@ jobs:
         prerelease: false
         files: |
           dist/*
-        generate_release_notes: true  # Auto-generate release notes from commits
+        generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     
