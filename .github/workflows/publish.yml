@@ -1,0 +1,60 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - 'v*'  # Run when a tag starting with 'v' is pushed
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: 1.8.5
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+    
+    - name: Install dependencies
+      run: |
+        poetry install
+    
+    - name: Verify tag version matches pyproject.toml
+      run: |
+        # Extract version from pyproject.toml
+        PROJECT_VERSION=$(poetry version --short)
+        # Extract version from tag (remove 'v' prefix)
+        TAG_VERSION=${GITHUB_REF#refs/tags/v}
+        
+        echo "Project version: $PROJECT_VERSION"
+        echo "Tag version: $TAG_VERSION"
+        
+        # Check if versions match
+        if [ "$PROJECT_VERSION" != "$TAG_VERSION" ]; then
+          echo "Error: Tag version ($TAG_VERSION) does not match version in pyproject.toml ($PROJECT_VERSION)"
+          exit 1
+        fi
+    
+    - name: Lint and test
+      run: |
+        poetry run make lint
+        poetry run make test
+    
+    - name: Build package
+      run: |
+        poetry build
+    
+    - name: Publish to PyPI
+      env:
+        PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
+      run: |
+        poetry config pypi-token.pypi $PYPI_TOKEN
+        poetry publish
