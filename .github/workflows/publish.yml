@@ -3,10 +3,52 @@ name: Publish to PyPI
 on:
   push:
     branches:
-      - 'release/v*'  # Run when a release branch is pushed
+      - main
+    paths:
+      - 'pyproject.toml'  # Only trigger when pyproject.toml changes
 
 jobs:
+  check_release_branch:
+    runs-on: ubuntu-latest
+    outputs:
+      is_release: ${{ steps.check.outputs.is_release }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Fetch all history to get merge commit details
+      
+      - id: check
+        name: Check if merged from release branch
+        run: |
+          # Get the most recent merge commit to main
+          MERGE_COMMIT=$(git log --merges -n 1 --format="%H")
+          
+          # If no merge commit found, exit early
+          if [ -z "$MERGE_COMMIT" ]; then
+            echo "is_release=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Get the merged branch name
+          BRANCH_NAME=$(git name-rev --name-only $MERGE_COMMIT^2)
+          echo "Merged branch: $BRANCH_NAME"
+          
+          # Check if it's a release branch
+          if [[ $BRANCH_NAME =~ ^release/v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "Release branch detected"
+            # Extract version from branch name
+            VERSION=$(echo $BRANCH_NAME | sed 's/^release\/v//')
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "is_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "Not a release branch"
+            echo "is_release=false" >> $GITHUB_OUTPUT
+          fi
+
   publish:
+    needs: check_release_branch
+    if: needs.check_release_branch.outputs.is_release == 'true'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
@@ -27,25 +69,21 @@ jobs:
       run: |
         poetry install
     
-    - name: Extract version from branch
+    - name: Verify release version matches pyproject.toml
       run: |
-        # Extract version from branch name (remove 'release/v' prefix)
-        BRANCH_VERSION=${GITHUB_REF#refs/heads/release/v}
-        
         # Extract version from pyproject.toml
         PROJECT_VERSION=$(poetry version --short)
+        # Get detected version from previous job
+        RELEASE_VERSION="${{ needs.check_release_branch.outputs.version }}"
         
-        echo "Branch version: $BRANCH_VERSION"
         echo "Project version: $PROJECT_VERSION"
+        echo "Release version: $RELEASE_VERSION"
         
         # Check if versions match
-        if [ "$PROJECT_VERSION" != "$BRANCH_VERSION" ]; then
-          echo "Error: Branch version ($BRANCH_VERSION) does not match version in pyproject.toml ($PROJECT_VERSION)"
+        if [ "$PROJECT_VERSION" != "$RELEASE_VERSION" ]; then
+          echo "Error: Release version ($RELEASE_VERSION) does not match version in pyproject.toml ($PROJECT_VERSION)"
           exit 1
         fi
-        
-        # Set version for later steps
-        echo "VERSION=$PROJECT_VERSION" >> $GITHUB_ENV
     
     - name: Lint and test
       run: |
@@ -55,16 +93,19 @@ jobs:
     - name: Build package
       run: |
         poetry build
-    
+      
     - name: Create GitHub Release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      uses: softprops/action-gh-release@v1
       with:
-        tag_name: v${{ env.VERSION }}
-        release_name: Release v${{ env.VERSION }}
+        tag_name: v${{ needs.check_release_branch.outputs.version }}
+        name: Release v${{ needs.check_release_branch.outputs.version }}
         draft: false
         prerelease: false
+        files: |
+          dist/*
+        generate_release_notes: true  # Auto-generate release notes from commits
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     
     - name: Publish to PyPI
       env:
