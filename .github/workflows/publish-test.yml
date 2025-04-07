@@ -21,13 +21,20 @@ jobs:
       - id: check
         name: Check if merged from release branch
         run: |
-          # Get the most recent merge commit to main
+          # Print some git history details for debugging
+          echo "Last 5 commits:"
+          git log -n 5 --oneline
+          
+          echo "Last 5 merge commits:"
+          git log --merges -n 5 --oneline
+          
+          # Try to get the most recent merge commit
           MERGE_COMMIT=$(git log --merges -n 1 --format="%H")
-          echo $MERGE_COMMIT
+          echo "Most recent merge commit: $MERGE_COMMIT"
           
           # If no merge commit found, exit early
           if [ -z "$MERGE_COMMIT" ]; then
-            echo "is_release=false"
+            echo "No merge commit found"
             echo "is_release=false" >> $GITHUB_OUTPUT
             exit 0
           fi
@@ -36,11 +43,15 @@ jobs:
           BRANCH_NAME=$(git name-rev --name-only $MERGE_COMMIT^2)
           echo "Merged branch: $BRANCH_NAME"
           
+          # Print the raw branch name for debugging
+          echo "Raw branch output: $(git name-rev $MERGE_COMMIT^2)"
+          
           # Check if it's a release branch
           if [[ $BRANCH_NAME =~ ^release/v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
             echo "Release branch detected"
             # Extract version from branch name
             VERSION=$(echo $BRANCH_NAME | sed 's/^release\/v//')
+            echo "Extracted version: $VERSION"
             echo "version=$VERSION" >> $GITHUB_OUTPUT
             echo "is_release=true" >> $GITHUB_OUTPUT
           else
