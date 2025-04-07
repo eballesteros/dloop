@@ -1,0 +1,104 @@
+name: Test Publish Process
+
+on:
+  push:
+    branches:
+      - publish-ci  # Changed to your feature branch
+    paths:
+      - 'pyproject.toml'
+
+jobs:
+  check_release_branch:
+    runs-on: ubuntu-latest
+    outputs:
+      is_release: ${{ steps.check.outputs.is_release }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Fetch all history to get merge commit details
+      
+      - id: check
+        name: Check if merged from release branch
+        run: |
+          # Get the most recent merge commit to main
+          MERGE_COMMIT=$(git log --merges -n 1 --format="%H")
+          
+          # If no merge commit found, exit early
+          if [ -z "$MERGE_COMMIT" ]; then
+            echo "is_release=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Get the merged branch name
+          BRANCH_NAME=$(git name-rev --name-only $MERGE_COMMIT^2)
+          echo "Merged branch: $BRANCH_NAME"
+          
+          # Check if it's a release branch
+          if [[ $BRANCH_NAME =~ ^release/v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "Release branch detected"
+            # Extract version from branch name
+            VERSION=$(echo $BRANCH_NAME | sed 's/^release\/v//')
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "is_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "Not a release branch"
+            echo "is_release=false" >> $GITHUB_OUTPUT
+          fi
+
+  publish_dry_run:
+    needs: check_release_branch
+    if: needs.check_release_branch.outputs.is_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: 1.8.5
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+    
+    - name: Install dependencies
+      run: |
+        poetry install
+    
+    - name: Verify release version matches pyproject.toml
+      run: |
+        # Extract version from pyproject.toml
+        PROJECT_VERSION=$(poetry version --short)
+        # Get detected version from previous job
+        RELEASE_VERSION="${{ needs.check_release_branch.outputs.version }}"
+        
+        echo "Project version: $PROJECT_VERSION"
+        echo "Release version: $RELEASE_VERSION"
+        
+        # Check if versions match
+        if [ "$PROJECT_VERSION" != "$RELEASE_VERSION" ]; then
+          echo "Error: Release version ($RELEASE_VERSION) does not match version in pyproject.toml ($PROJECT_VERSION)"
+          exit 1
+        fi
+    
+    - name: Lint and test
+      run: |
+        poetry run make lint
+        poetry run make test
+    
+    - name: Build package
+      run: |
+        poetry build
+    - name: Dry run GitHub Release
+      run: |
+        echo "Would create GitHub Release with tag v${{ needs.check_release_branch.outputs.version }}"
+        echo "Would attach files from dist/ directory"
+    
+    - name: Dry run PyPI publish
+      run: |
+        echo "Would publish to PyPI using token from secrets.PYPI_TOKEN"
+        echo "This is just a dry run - no actual publishing"
