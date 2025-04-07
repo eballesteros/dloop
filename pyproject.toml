@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "dloop"
-version = "0.1.2"
+version = "0.1.3"
 description = "lightweight Python library that simplifies deep learning training loops by providing an elegant event-based iteration system"
 authors = ["Eduardo Ballesteros <eduardo.ballesterosg@outlook.com>"]
 license = "MIT"
